@@ -22,6 +22,9 @@ def compare(store, payload):
 
 
 def dispatch(store, operation, payload):
+    if operation == "mem0-extract":
+        from .mem0_bridge import extract
+        return extract(store, **payload)
     if operation == "initiate":
         return initiate(store, **payload)
     if operation == "compare":

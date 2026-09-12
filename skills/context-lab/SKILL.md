@@ -64,6 +64,26 @@ the saved folder. Refresh replaces the searchable snapshot, preserves original
 evidence and the first initialization date, and leaves the previous setup intact
 if reading fails. Ordinary `/initiate` never rescans.
 
+## Optional local Mem0 extraction
+
+When the user asks to extract memories with Mem0, save their selected observation
+with `memory_observe`, then call `memory_extract` with its `source_id` and the same
+project/ticket. For an existing source, use its ID without copying it. The source
+must be at most 4000 UTF-8 bytes; for longer sessions, ask for a focused excerpt.
+Do not send the whole conversation or vault automatically. Obsidian indexing
+remains separate and does not require Mem0.
+
+This runs local Ollama through Mem0 in the repository's `.venv`, saves candidates
+with linked evidence, and reuses already-extracted records on repeat calls.
+Report candidate counts and direct the user to the UI's Memories view for review;
+never automatically confirm them. Existing reviewed records are not overwritten.
+Continue to retrieve through `memory_context`, not directly from unreviewed Mem0
+records. If no memories are returned, report that without claiming the source
+contained nothing useful. On failure, the original evidence remains saved.
+
+If the MCP client has not reloaded `memory_extract`, use the CLI fallback below
+with `mem0-extract --source <source-id> --project <project> --ticket <ticket>`.
+
 ## CLI fallback
 
 If the MCP server is unavailable or has not reloaded the new tool, use the bundled

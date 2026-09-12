@@ -36,6 +36,8 @@ TOOLS = [
          {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"]),
     tool("memory_observe", "Record a source observation. This stores evidence only; it does not create a confirmed lesson.",
          {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}}, ["project", "title", "body"], False),
+    tool("memory_extract", "Explicitly send one saved observation (max 4000 UTF-8 bytes) to local Mem0/Ollama. Persists extracted facts as candidates in the same project/ticket for human review; they cannot affect retrieval until confirmed. Repeat calls reuse extracted records. No cloud service or vault-wide ingestion.",
+         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"], False),
     tool("memory_propose", "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. Each needs an existing evidence source.",
          {"memories": {"type": "array", "items": {"type": "object"}}}, ["memories"], False),
     tool("memory_feedback", "Record reported helpful, missed, irrelevant or stale memory and diagnose the pipeline stage from a run snapshot. Feedback is not verified ground truth and does not auto-promote lessons.",
@@ -61,6 +63,9 @@ def call(store, name, args):
         return s
     if name == "memory_observe":
         return store.add_source(args)
+    if name == "memory_extract":
+        from .mem0_bridge import extract
+        return extract(store, **args)
     if name == "memory_propose":
         entries = []
         for item in args["memories"]:

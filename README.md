@@ -237,6 +237,7 @@ Exposed tools:
 | `memory_context` | Build a compact, targeted packet and save a run snapshot |
 | `memory_source` | Read original evidence within a project |
 | `memory_observe` | Append an observation source |
+| `memory_extract` | Extract candidate facts from one scoped observation using local Mem0/Ollama |
 | `memory_propose` | Add candidate memories for review |
 | `memory_feedback` | Report usefulness or a failure and record its likely stage |
 
@@ -283,6 +284,54 @@ python3 -m context_lab context --task examples/task.json --model-planner --embed
 Drafting returns candidate JSON without saving it. Exact source excerpts are checked;
 review the scope, assumptions and exceptions before importing. No reward learning,
 automatic promotion or background distillation scheduler is running.
+
+## Connect local Mem0 to Context Lab
+
+With the optional packages installed in this repository's `.venv` and Ollama
+running with `qwen3:4b` and `embeddinggemma:300m`, start Context Lab normally.
+In **Evidence**, save an observation with its project/ticket, then click
+**Extract with local Mem0** on that source. This persists candidate facts and opens
+them in **Memories**. Read the linked evidence; to approve an accurate candidate,
+use **Edit**, set `status` to `confirmed`, and save the revision. Only then can it
+appear in the existing context builder or agent recall for that exact scope.
+
+The same operation is exposed as the MCP tool `memory_extract` and the CLI:
+
+```bash
+python3 -m context_lab mem0-extract --source YOUR_SOURCE_ID --project my-project --ticket PROJ-123
+```
+
+Restart a running UI server after updating the code. Reconnect/restart the MCP
+server in your agent client to discover the new tool, or use the skill's CLI
+fallback. The launcher uses `.venv/bin/python` (`.venv/Scripts/python.exe` on Windows)
+for extraction when present, otherwise the current interpreter. The core app
+still runs without Mem0; optional packages are loaded only by the extraction worker.
+
+Both models are explicitly local at `127.0.0.1:11434`; no cloud fallback, Docker,
+automatic model downloads or telemetry is used by this bridge. Originals remain
+in Context Lab's SQLite store. Mem0 vectors/history are stored alongside it in
+`<database-filename>.mem0/` (normally `workspace/memory.sqlite3.mem0/`), separate from
+the standalone sandbox. Back up that folder too if retaining extraction history.
+
+Project/ticket entity IDs constrain Mem0's own recall during extraction. A separate
+source-level run ID prevents unrelated observations being attributed to the selected
+source. Returned identity and provenance are checked before any candidate is saved.
+Repeat calls recover persisted results without overwriting reviewed candidates.
+Unreviewed Mem0 records are never injected directly into context. This is an explicit
+extraction bridge, not two-way synchronization or background conversation capture.
+
+Limits: 4000 UTF-8 bytes per observation, 180 seconds per extraction, and one worker
+at a time per Mem0 store (a concurrent attempt reports busy; retry after it finishes).
+Long notes remain available through ordinary Obsidian indexing. Mem0/model output
+can miss facts; an empty result is not a verified finding. Use a focused excerpt
+when a source exceeds the local embedding model's practical input limit.
+
+Offline checks run with the normal test suite. For a real local two-ticket
+extraction/review/isolation test using only disposable synthetic data:
+
+```bash
+CONTEXT_LAB_MEM0_LIVE=1 python3 -m unittest discover -s tests -p test_mem0.py -v
+```
 
 ## Run and extend evaluation
 
