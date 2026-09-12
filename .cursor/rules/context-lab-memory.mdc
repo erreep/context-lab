@@ -7,6 +7,10 @@ alwaysApply: true
 
 This repo is a memory lab. Prefer its MCP tools for recall and evidence, not inventing project history.
 
+## Automatic recall and commit lease
+
+Claude Code and Codex inject a scoped CompactView on every prompt once worktree scope is set (`python3 -m context_lab hook set-scope`). Cursor does not get prompt injection. Before every `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. The Git `pre-commit` hook verifies the lease. A lease proves a retrieval event under specific Git and scope conditions, not comprehension. Client hooks are guardrails, not a security boundary.
+
 ## Hard gates — call `memory_context` before
 
 Same as `skills/context-lab/gates.md` (also mirrored in `AGENTS.md` and MCP `initialize.instructions`):
@@ -15,7 +19,7 @@ Same as `skills/context-lab/gates.md` (also mirrored in `AGENTS.md` and MCP `ini
 2. Before every `git commit` or `git push`.
 3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
 
-Setup is not recall. Initializing a ticket does not load standing rules until `memory_context` runs.
+Setup is not recall. Initializing a ticket does not load standing rules until `memory_context` runs (or ambient inject / `recall-for` does).
 Prefer `memory_initiate` with `knowledge: { "mode": "auto" }` (or `import` + path) instead of multi-turn folder Q&A.
 
 ## When to call tools
@@ -28,6 +32,7 @@ Prefer `memory_initiate` with `knowledge: { "mode": "auto" }` (or `import` + pat
 ## Writing memory
 
 - New observation → `memory_observe` (evidence only).
+- Durable ticket note → `memory_journal` (plan|decision|progress|handoff into the bound ticket folder).
 - Possible lesson → `memory_propose` (stays candidate until confirmed in the local UI).
 - After an outcome → `memory_feedback` with the `run_id` from `memory_context`.
 

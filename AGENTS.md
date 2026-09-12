@@ -33,7 +33,9 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 # Context Lab hard gates
 
-Call `memory_context` before:
+With worktree scope set, Claude Code and Codex inject a scoped CompactView on every prompt. Cursor does not. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. The worktree `pre-commit` hook verifies the lease (a retrieval event under bound Git state, not proof of comprehension). Client hooks are guardrails, not a security boundary.
+
+Call `memory_context` (or rely on ambient inject where available) before:
 
 1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
 2. Before every `git commit` or `git push`.
