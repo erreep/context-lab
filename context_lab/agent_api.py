@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context
-from .schemas import AgentError, activation_hint, format_context
+from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context
 from .store import new_id, scope_covers, scope_key
 
 
@@ -86,11 +86,29 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
         store, auto_detected=auto_detected)
 
 
-def context(store, task, budget=1200, detail="full"):
-    if detail not in {"full", "prose"}:
-        raise AgentError("validation", "detail must be full or prose", field="detail")
-    packet = compile_context(store, task, budget=budget)
-    return format_context(packet, detail)
+def context(store, task, budget=1200, detail="agent"):
+    if detail not in DETAIL_LEVELS:
+        raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
+    # Leave headroom so picks/needs/wire fields on CompactView still fit the caller budget.
+    compact = detail in {"agent", "prose"}
+    select_budget = max(128, budget - 120) if compact else budget
+    packet = compile_context(store, task, budget=select_budget)
+    view = format_context(packet, detail)
+    if compact and view["wire_estimated_tokens"] > budget:
+        raise AgentError(
+            "wire_budget_exceeded",
+            "Compact response exceeds budget; shorten the task or raise budget",
+            field="budget",
+            hint="Use memory_inspect_run for traces; do not widen the agent wire",
+        )
+    return view
+
+
+def inspect_run(store, run_id):
+    packet = store.run(run_id)
+    if not packet:
+        raise AgentError("not_found", "Unknown run_id", field="run_id")
+    return format_context(packet, detail="inspect")
 
 
 def propose(store, memories):

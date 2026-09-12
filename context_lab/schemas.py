@@ -1,6 +1,9 @@
 """Agent-facing JSON shapes, errors, and gate text. Single source for MCP schemas."""
 from __future__ import annotations
 
+import json
+import math
+
 GATE_TEXT = """# Context Lab hard gates
 
 Call `memory_context` before:
@@ -13,6 +16,8 @@ Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_
 """
 
 KINDS = ["fact", "constraint", "decision", "event", "lesson"]
+# agent/prose = CompactView (default MCP). inspect/full = TraceView keys for workbench.
+DETAIL_LEVELS = frozenset({"agent", "prose", "inspect", "full"})
 
 TASK_SCHEMA = {
     "type": "object",
@@ -82,7 +87,7 @@ KNOWLEDGE_SCHEMA = {
     },
 }
 
-PROSE_KEYS = ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps")
+PROSE_KEYS = ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps", "picks")
 FULL_KEYS = PROSE_KEYS + ("selected", "trace", "conflicts")
 
 
@@ -106,9 +111,20 @@ def error_payload(exc):
     return {"error": {"code": "validation", "message": str(exc)}}
 
 
-def format_context(packet, detail="full"):
-    keys = PROSE_KEYS if detail == "prose" else FULL_KEYS
-    return {k: packet[k] for k in keys if k in packet}
+def wire_estimated_tokens(obj):
+    """Same unit as engine.estimated_tokens: ceil(UTF-8 bytes / 4) over serialized JSON."""
+    return math.ceil(len(json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) / 4)
+
+
+def format_context(packet, detail="agent"):
+    """Project a compile packet for the agent (compact) or inspect (trace) surface."""
+    compact = detail in {"agent", "prose"}
+    keys = PROSE_KEYS if compact else FULL_KEYS
+    out = {k: packet[k] for k in keys if k in packet and k != "picks"}
+    # Selected ids/titles only. Never excluded/candidate titles on the agent wire.
+    out["picks"] = [{"id": m["id"], "title": m["title"]} for m in packet.get("selected", [])]
+    out["wire_estimated_tokens"] = wire_estimated_tokens(out)
+    return out
 
 
 def activation_hint(store, project, ticket=""):
