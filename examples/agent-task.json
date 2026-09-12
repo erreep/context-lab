@@ -1,0 +1,8 @@
+{
+  "query": "Let two colleagues change the same document at once.",
+  "project": "fieldnote",
+  "as_of": "2026-09-12",
+  "actions": ["sharing"],
+  "needs": ["storage_assumption", "offline_mode", "access_policy"],
+  "state": {"single_device": false}
+}

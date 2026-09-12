@@ -1,0 +1,29 @@
+{
+  "description": "Transparent starter rules for the synthetic software-project demo. Extend for your domain or supply actions and needs from your agent. Regex matching is not semantic understanding and does not reliably handle negation.",
+  "actions": {
+    "sync": {"patterns": ["\\b(sync\\w*|reconnect\\w*|background uploads?|offline queue|replay)\\b"], "needs": ["offline_mode", "duplicate_prevention"]},
+    "retry": {"patterns": ["\\b(retr(?:y|ies|ied|ying)|backoff|redeliver\\w*)\\b"], "needs": ["duplicate_prevention"]},
+    "sharing": {"patterns": ["\\b(team sharing|shared editing|collaborat\\w*|multi-device|multiple devices)\\b"], "needs": ["storage_assumption", "offline_mode", "access_policy"]},
+    "storage": {"patterns": ["\\b(sqlite|database|storage|persistence)\\b"], "needs": ["storage_assumption"]},
+    "hosting": {"patterns": ["\\b(hosting|hosted|cloud|managed service|hosting vendor)\\b"], "needs": ["hosting_policy", "offline_mode"]},
+    "auth": {"patterns": ["\\b(login|log in|sign-in|sign in|authentication|SSO|magic links?)\\b"], "needs": ["auth_policy"]},
+    "migration": {"patterns": ["\\b(migrat\\w*|schema|rename columns?|drop columns?)\\b"], "needs": ["schema_compatibility"]},
+    "ui": {"patterns": ["\\b(button|theme|colou?r|spacing|typography|visual style)\\b"], "needs": ["brand_rule"]},
+    "deploy": {"patterns": ["\\b(deploy\\w*|release|launch)\\b"], "needs": ["release_policy"]},
+    "search": {"patterns": ["\\b(search|indexing)\\b"], "needs": ["query_privacy"]},
+    "delete": {"patterns": ["\\b(delet\\w*|purge|retention)\\b"], "needs": ["retention_rule"]}
+  },
+  "needs": {
+    "offline_mode": "Must core editing work without a connection?",
+    "duplicate_prevention": "What evidence determines whether repeating the operation is safe?",
+    "storage_assumption": "Which conditions justified the current storage architecture?",
+    "hosting_policy": "Are hosted services acceptable for this project now?",
+    "access_policy": "Who can access shared data?",
+    "auth_policy": "Which authentication approach is currently approved?",
+    "schema_compatibility": "Must existing clients tolerate the schema change?",
+    "brand_rule": "Which visual conventions apply?",
+    "release_policy": "Which checks are required before release?",
+    "query_privacy": "Where may note content be processed for search?",
+    "retention_rule": "When should deleted data be permanently removed?"
+  }
+}

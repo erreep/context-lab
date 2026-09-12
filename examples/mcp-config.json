@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context-lab": {
+      "command": "python3",
+      "args": ["/ABSOLUTE/PATH/context-lab/mcp_server.py", "--db", "/ABSOLUTE/PATH/context-lab/workspace/memory.sqlite3"]
+    }
+  }
+}

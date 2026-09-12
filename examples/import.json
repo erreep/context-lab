@@ -1,0 +1,8 @@
+{
+  "sources": [
+    {"id": "my-observation-1", "project": "my-project", "title": "Replace this with a real observation", "body": "Example only: a job created two invoices after a repeated delivery. Replace this text with the original observation before confirming a lesson."}
+  ],
+  "memories": [
+    {"id": "my-lesson-1", "project": "my-project", "kind": "lesson", "title": "Check duplicate effects before retry", "claim": "Candidate lesson: verify duplicate prevention before repeating a record-creating operation.", "source_ids": ["my-observation-1"], "status": "candidate", "applies": {"actions_any": ["retry"]}, "unless": {"idempotency_verified": true}, "need_tags": ["duplicate_prevention"], "expected_effect": "Inspect the existing duplicate prevention mechanism before adding retries."}
+  ]
+}

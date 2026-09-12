@@ -1,0 +1,611 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "sources": [
+    {
+      "id": "src-product",
+      "project": "fieldnote",
+      "title": "Product decision: disconnected work",
+      "body": "Core editing must work without any connection. Optional synchronization must not block local edits. This is a confirmed product requirement.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-storage",
+      "project": "fieldnote",
+      "title": "Architecture decision: local store",
+      "body": "We chose SQLite for the local store because the first release runs on one device. This decision did not evaluate simultaneous editing across devices. Revisit the architecture if that assumption changes.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-incident",
+      "project": "fieldnote",
+      "title": "Incident: duplicated edits after reconnect",
+      "body": "During reconnect, the upload worker retried an acknowledged request. The server created a second edit because it treated the delivery as a new operation. A regression test reproduced the duplicate.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-read",
+      "project": "fieldnote",
+      "title": "Read-only endpoint retry experiment",
+      "body": "The read-only GET /status endpoint was safe to retry with bounded backoff. We did not test this approach for POST requests that create records.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-host-old",
+      "project": "fieldnote",
+      "title": "Original hosting restriction",
+      "body": "For the initial prototype, do not introduce any paid hosting service. This decision is limited to the initial prototype.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-host-new",
+      "project": "fieldnote",
+      "title": "July decision: optional hosted relay",
+      "body": "The product owner approved an optional hosted relay from 1 July 2026. It must stay below the agreed monthly cap and cannot be required for local editing. This replaces the prototype ban on paid hosting.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-auth-old",
+      "project": "fieldnote",
+      "title": "Initial login plan",
+      "body": "The prototype login plan used passwords. This was the initial plan, before the authentication review.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-auth-new",
+      "project": "fieldnote",
+      "title": "Authentication review",
+      "body": "From 15 March 2026, use email magic links for login. This explicitly replaces the password plan. Enterprise SSO has not been decided.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-schema",
+      "project": "fieldnote",
+      "title": "Incident: old client broke after column removal",
+      "body": "Removing the legacy title column broke installed desktop clients. A compatibility test reproduced the issue. For mixed client versions, add the replacement first and delay removal until old clients no longer depend on it.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-brand",
+      "project": "fieldnote",
+      "title": "Fieldnote visual conventions",
+      "body": "Use deep green for primary buttons, an off-white canvas and restrained orange accents. Keep these visual conventions consistent in settings and editor screens.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-release",
+      "project": "fieldnote",
+      "title": "Release checklist",
+      "body": "Before a production release, run the offline editing check and the compatibility suite. A passing unit test suite alone is insufficient.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-search",
+      "project": "fieldnote",
+      "title": "Privacy requirement for search",
+      "body": "Private note text may not be sent to a third-party search indexing service. Local indexing is permitted. This requirement also applies when the interface only sends excerpts.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-retention-a",
+      "project": "fieldnote",
+      "title": "Retention proposal marked approved by operations",
+      "body": "Operations recorded deleted-note retention as 30 days. The document is marked approved, but no relationship to the product retention document is recorded.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-retention-b",
+      "project": "fieldnote",
+      "title": "Retention record from product",
+      "body": "Product recorded deleted-note retention as 90 days. No explicit supersession of the operations document is recorded.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-candidate",
+      "project": "fieldnote",
+      "title": "Unreviewed agent suggestion",
+      "body": "An agent suggested switching all persistence to a hosted database. Nobody has confirmed that suggestion.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-future",
+      "project": "fieldnote",
+      "title": "Planned future release policy",
+      "body": "A proposed 2027 support window would require a different client compatibility suite. This policy is not effective before 1 January 2027.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-ui-old",
+      "project": "fieldnote",
+      "title": "Temporary launch styling",
+      "body": "A blue primary button was temporarily used only during the January launch experiment; that experiment ended on 1 February 2026.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "src-shop",
+      "project": "shopfront",
+      "title": "Shopfront deployment architecture",
+      "body": "Shopfront requires online connectivity and uses a managed hosted database. This is a separate project from Fieldnote.",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    }
+  ],
+  "memories": [
+    {
+      "id": "C-offline",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Editing continues without a connection",
+      "claim": "Core editing must work without any connection. Optional synchronization must not block local edits.",
+      "source_ids": [
+        "src-product"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "sync",
+          "sharing",
+          "hosting",
+          "deploy"
+        ]
+      },
+      "need_tags": [
+        "offline_mode"
+      ],
+      "assertions": {
+        "offline_mode": true
+      },
+      "quote": "Core editing must work without any connection."
+    },
+    {
+      "id": "D-local",
+      "project": "fieldnote",
+      "kind": "decision",
+      "title": "SQLite selection and its original assumption",
+      "claim": "SQLite is the local store. Its original selection did not evaluate simultaneous editing across devices.",
+      "source_ids": [
+        "src-storage"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "storage",
+          "sharing",
+          "sync"
+        ]
+      },
+      "need_tags": [
+        "storage_assumption"
+      ],
+      "assumptions": {
+        "single_device": true
+      },
+      "rationale": "The first release ran on one device.",
+      "expected_effect": "Reconsider the architecture when introducing shared editing."
+    },
+    {
+      "id": "E-duplicate",
+      "project": "fieldnote",
+      "kind": "event",
+      "title": "Duplicated edits after reconnect",
+      "claim": "A retried upload created a second edit; the regression test reproduced it.",
+      "source_ids": [
+        "src-incident"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "sync",
+          "retry"
+        ]
+      },
+      "need_tags": [],
+      "topics": [
+        "upload",
+        "retry",
+        "reconnect"
+      ],
+      "quote": "A regression test reproduced the duplicate."
+    },
+    {
+      "id": "L-operation",
+      "project": "fieldnote",
+      "kind": "lesson",
+      "title": "Preserve operation identity across retry",
+      "claim": "When a write can be delivered again, reuse its operation identity and check that the receiver rejects duplicate effects.",
+      "source_ids": [
+        "src-incident"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "sync",
+          "retry"
+        ]
+      },
+      "need_tags": [
+        "duplicate_prevention"
+      ],
+      "depends_on": [
+        "E-duplicate"
+      ],
+      "unless": {
+        "idempotency_verified": true
+      },
+      "rationale": "Delivery can repeat even when the first response was lost.",
+      "expected_effect": "Inspect duplicate prevention before enabling automatic retry.",
+      "topics": [
+        "idempotency",
+        "upload",
+        "retry"
+      ]
+    },
+    {
+      "id": "L-read",
+      "project": "fieldnote",
+      "kind": "lesson",
+      "title": "Bounded retry for read-only status requests",
+      "claim": "Read-only GET status requests can use bounded retry. This result says nothing about record-creating requests.",
+      "source_ids": [
+        "src-read"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "retry"
+        ],
+        "state_equals": {
+          "http_method": "GET"
+        }
+      },
+      "need_tags": [
+        "duplicate_prevention"
+      ],
+      "assertions": {
+        "read_retry_safe": true
+      },
+      "expected_effect": "Verify that the operation is read-only before reusing this procedure."
+    },
+    {
+      "id": "C-host-old",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Initial prototype hosting restriction",
+      "claim": "The initial prototype must not introduce paid hosting.",
+      "source_ids": [
+        "src-host-old"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "hosting",
+          "sharing"
+        ]
+      },
+      "need_tags": [
+        "hosting_policy"
+      ],
+      "assertions": {
+        "hosting_allowed": false
+      }
+    },
+    {
+      "id": "C-host-current",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Optional hosted relay approved",
+      "claim": "An optional hosted relay is allowed within the agreed monthly cap; local editing must still work independently.",
+      "source_ids": [
+        "src-host-new"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-07-01",
+      "applies": {
+        "actions_any": [
+          "hosting",
+          "sharing"
+        ]
+      },
+      "need_tags": [
+        "hosting_policy"
+      ],
+      "supersedes": [
+        "C-host-old"
+      ],
+      "assertions": {
+        "hosting_allowed": true
+      },
+      "expected_effect": "Check the current cap before selecting a service; no amount is established in this source."
+    },
+    {
+      "id": "D-auth-old",
+      "project": "fieldnote",
+      "kind": "decision",
+      "title": "Original password login plan",
+      "claim": "Use passwords for prototype login.",
+      "source_ids": [
+        "src-auth-old"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "auth"
+        ]
+      },
+      "need_tags": [
+        "auth_policy"
+      ]
+    },
+    {
+      "id": "D-auth-current",
+      "project": "fieldnote",
+      "kind": "decision",
+      "title": "Email magic link login",
+      "claim": "Use email magic links for login. Enterprise SSO remains undecided.",
+      "source_ids": [
+        "src-auth-new"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-03-15",
+      "applies": {
+        "actions_any": [
+          "auth"
+        ]
+      },
+      "need_tags": [
+        "auth_policy"
+      ],
+      "supersedes": [
+        "D-auth-old"
+      ]
+    },
+    {
+      "id": "E-schema",
+      "project": "fieldnote",
+      "kind": "event",
+      "title": "Old desktop clients broke after column removal",
+      "claim": "A compatibility test reproduced an old-client failure after the legacy title column was removed.",
+      "source_ids": [
+        "src-schema"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "migration"
+        ]
+      },
+      "need_tags": [],
+      "topics": [
+        "schema",
+        "column",
+        "migration"
+      ]
+    },
+    {
+      "id": "L-schema",
+      "project": "fieldnote",
+      "kind": "lesson",
+      "title": "Stage schema changes while older clients remain",
+      "claim": "For mixed client versions, add the replacement first and delay removing fields still used by installed clients.",
+      "source_ids": [
+        "src-schema"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "migration"
+        ],
+        "state_equals": {
+          "old_clients_present": true
+        }
+      },
+      "need_tags": [
+        "schema_compatibility"
+      ],
+      "depends_on": [
+        "E-schema"
+      ],
+      "expected_effect": "Check the oldest supported client before removing the column."
+    },
+    {
+      "id": "C-brand",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Fieldnote visual conventions",
+      "claim": "Use deep green primary buttons, an off-white canvas and restrained orange accents.",
+      "source_ids": [
+        "src-brand"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "ui"
+        ]
+      },
+      "need_tags": [
+        "brand_rule"
+      ]
+    },
+    {
+      "id": "C-release",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Release checks",
+      "claim": "Before release, run offline editing and compatibility checks in addition to unit tests.",
+      "source_ids": [
+        "src-release"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "deploy"
+        ]
+      },
+      "need_tags": [
+        "release_policy"
+      ]
+    },
+    {
+      "id": "C-search",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Private note search remains local",
+      "claim": "Private note text and excerpts must not be sent to third-party search indexes.",
+      "source_ids": [
+        "src-search"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "search"
+        ]
+      },
+      "need_tags": [
+        "query_privacy"
+      ],
+      "expected_effect": "Check where indexing processes note text."
+    },
+    {
+      "id": "C-retention-30",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Operations retention record",
+      "claim": "Operations recorded a 30-day deleted-note retention period.",
+      "source_ids": [
+        "src-retention-a"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "delete"
+        ]
+      },
+      "need_tags": [
+        "retention_rule"
+      ],
+      "assertions": {
+        "retention_days": 30
+      }
+    },
+    {
+      "id": "C-retention-90",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Product retention record",
+      "claim": "Product recorded a 90-day deleted-note retention period.",
+      "source_ids": [
+        "src-retention-b"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "delete"
+        ]
+      },
+      "need_tags": [
+        "retention_rule"
+      ],
+      "assertions": {
+        "retention_days": 90
+      }
+    },
+    {
+      "id": "D-unreviewed",
+      "project": "fieldnote",
+      "kind": "decision",
+      "title": "Unreviewed hosted database suggestion",
+      "claim": "Switch all persistence to a hosted database.",
+      "source_ids": [
+        "src-candidate"
+      ],
+      "status": "candidate",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "storage",
+          "hosting"
+        ]
+      },
+      "need_tags": [
+        "storage_assumption"
+      ]
+    },
+    {
+      "id": "C-future",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Future compatibility suite",
+      "claim": "Use the new 2027 compatibility suite for releases.",
+      "source_ids": [
+        "src-future"
+      ],
+      "status": "confirmed",
+      "valid_from": "2027-01-01",
+      "applies": {
+        "actions_any": [
+          "deploy"
+        ]
+      },
+      "need_tags": [
+        "release_policy"
+      ]
+    },
+    {
+      "id": "C-expired",
+      "project": "fieldnote",
+      "kind": "constraint",
+      "title": "Temporary blue launch button",
+      "claim": "Use a blue primary button during the temporary launch experiment.",
+      "source_ids": [
+        "src-ui-old"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "ui"
+        ]
+      },
+      "need_tags": [
+        "brand_rule"
+      ],
+      "valid_until": "2026-02-01"
+    },
+    {
+      "id": "S-hosting",
+      "project": "shopfront",
+      "kind": "fact",
+      "title": "Shopfront hosted database",
+      "claim": "Shopfront requires connectivity and uses a managed hosted database.",
+      "source_ids": [
+        "src-shop"
+      ],
+      "status": "confirmed",
+      "valid_from": "2026-01-01",
+      "applies": {
+        "actions_any": [
+          "hosting",
+          "storage",
+          "deploy"
+        ]
+      },
+      "need_tags": [
+        "hosting_policy",
+        "storage_assumption"
+      ]
+    }
+  ]
+}

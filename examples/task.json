@@ -1,0 +1,6 @@
+{
+  "query": "Add background uploads that retry after reconnecting.",
+  "project": "fieldnote",
+  "as_of": "2026-09-12",
+  "state": {"idempotency_verified": false, "http_method": "POST", "single_device": true}
+}

@@ -1,0 +1,36 @@
+Task: Let two colleagues change the same document at once.
+Project: fieldnote; as of: 2026-09-12
+Known state: {"single_device": false}
+Use evidence within its stated scope. Conditional lessons require checking.
+
+[C-offline v1] constraint: Editing continues without a connection
+Core editing must work without any connection. Optional synchronization must not block local edits.
+Scope: fieldnote; valid from 2026-01-01
+Use conditions: {"actions_any": ["sync", "sharing", "hosting", "deploy"]}
+Evidence: src-product
+Source excerpt: Core editing must work without any connection.
+Applicability: applicable
+
+[D-local v1] decision: SQLite selection and its original assumption
+SQLite is the local store. Its original selection did not evaluate simultaneous editing across devices.
+Reason: The first release ran on one device.
+Expected effect: Reconsider the architecture when introducing shared editing.
+Scope: fieldnote; valid from 2026-01-01
+Use conditions: {"actions_any": ["storage", "sharing", "sync"]}
+Assumptions: {"single_device": true}
+Evidence: src-storage
+Applicability: conditional
+RECONSIDER: assumption single_device == true no longer holds
+
+[C-host-current v1] constraint: Optional hosted relay approved
+An optional hosted relay is allowed within the agreed monthly cap; local editing must still work independently.
+Expected effect: Check the current cap before selecting a service; no amount is established in this source.
+Scope: fieldnote; valid from 2026-07-01
+Use conditions: {"actions_any": ["hosting", "sharing"]}
+Evidence: src-host-new
+Applicability: applicable
+
+Evidence checks (declared needs only; not proof of completeness):
+- access_policy: missing
+- offline_mode: evidence_present
+- storage_assumption: conditional

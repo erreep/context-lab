@@ -1,0 +1,766 @@
+{
+  "name": "Fieldnote: 28 authored context-selection cases",
+  "cases": [
+    {
+      "id": "01",
+      "label": "Background uploads after reconnect",
+      "category": "implicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Add background uploads that retry after reconnecting.",
+        "project": "fieldnote",
+        "state": {
+          "idempotency_verified": false,
+          "http_method": "POST",
+          "single_device": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-offline",
+          "L-operation",
+          "E-duplicate"
+        ],
+        "forbidden": [
+          "L-read",
+          "C-brand"
+        ],
+        "relevant": [
+          "C-offline",
+          "D-local",
+          "E-duplicate",
+          "L-operation"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "02",
+      "label": "Read-only retry",
+      "category": "implicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Add bounded retry to the read-only status request.",
+        "project": "fieldnote",
+        "state": {
+          "http_method": "GET",
+          "idempotency_verified": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-read"
+        ],
+        "forbidden": [
+          "L-operation"
+        ],
+        "relevant": [
+          "E-duplicate",
+          "L-read"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "03",
+      "label": "Write retry",
+      "category": "implicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Add retry to the request that creates a note.",
+        "project": "fieldnote",
+        "state": {
+          "http_method": "POST",
+          "idempotency_verified": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-operation",
+          "E-duplicate"
+        ],
+        "forbidden": [
+          "L-read"
+        ],
+        "relevant": [
+          "E-duplicate",
+          "L-operation"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "04",
+      "label": "Duplicate prevention already verified",
+      "category": "negative",
+      "split": "illustrative",
+      "task": {
+        "query": "Change the retry backoff duration.",
+        "project": "fieldnote",
+        "state": {
+          "http_method": "POST",
+          "idempotency_verified": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [
+          "L-operation",
+          "L-read"
+        ],
+        "relevant": [
+          "E-duplicate"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "05",
+      "label": "Exception state unknown",
+      "category": "uncertainty",
+      "split": "illustrative",
+      "task": {
+        "query": "Add retry to the request that creates a note.",
+        "project": "fieldnote",
+        "state": {
+          "http_method": "POST"
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-operation",
+          "E-duplicate"
+        ],
+        "forbidden": [
+          "L-read"
+        ],
+        "relevant": [
+          "E-duplicate",
+          "L-operation"
+        ],
+        "gaps": {
+          "duplicate_prevention": "conditional"
+        }
+      }
+    },
+    {
+      "id": "06",
+      "label": "Team sharing changes an assumption",
+      "category": "changed_assumption",
+      "split": "illustrative",
+      "task": {
+        "query": "Add team sharing with shared editing.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-offline",
+          "D-local"
+        ],
+        "forbidden": [
+          "C-host-old"
+        ],
+        "relevant": [
+          "C-host-current",
+          "C-offline",
+          "D-local"
+        ],
+        "gaps": {
+          "storage_assumption": "conditional",
+          "access_policy": "missing"
+        }
+      }
+    },
+    {
+      "id": "07",
+      "label": "Storage rationale",
+      "category": "explicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Explain why this project uses SQLite storage.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "D-local"
+        ],
+        "forbidden": [
+          "D-unreviewed"
+        ],
+        "relevant": [
+          "D-local"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "08",
+      "label": "Historical hosting restriction",
+      "category": "temporal",
+      "split": "illustrative",
+      "task": {
+        "query": "Can the prototype use a hosted service?",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-02-01"
+      },
+      "expected": {
+        "required": [
+          "C-host-old",
+          "C-offline"
+        ],
+        "forbidden": [
+          "C-host-current"
+        ],
+        "relevant": [
+          "C-host-old",
+          "C-offline"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "09",
+      "label": "Current hosting policy",
+      "category": "temporal",
+      "split": "illustrative",
+      "task": {
+        "query": "Can we choose a hosted relay for this project?",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-host-current",
+          "C-offline"
+        ],
+        "forbidden": [
+          "C-host-old"
+        ],
+        "relevant": [
+          "C-host-current",
+          "C-offline"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "10",
+      "label": "Current authentication",
+      "category": "temporal",
+      "split": "illustrative",
+      "task": {
+        "query": "Implement the login flow.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "D-auth-current"
+        ],
+        "forbidden": [
+          "D-auth-old"
+        ],
+        "relevant": [
+          "D-auth-current"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "11",
+      "label": "Historical authentication",
+      "category": "temporal",
+      "split": "illustrative",
+      "task": {
+        "query": "Explain the login plan as it stood in February.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-02-10"
+      },
+      "expected": {
+        "required": [
+          "D-auth-old"
+        ],
+        "forbidden": [
+          "D-auth-current"
+        ],
+        "relevant": [
+          "D-auth-old"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "12",
+      "label": "Schema removal with older clients",
+      "category": "dependency",
+      "split": "illustrative",
+      "task": {
+        "query": "Drop the legacy title column in the next schema migration.",
+        "project": "fieldnote",
+        "state": {
+          "old_clients_present": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-schema",
+          "E-schema"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "E-schema",
+          "L-schema"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "13",
+      "label": "No older clients remain",
+      "category": "negative",
+      "split": "illustrative",
+      "task": {
+        "query": "Drop the legacy title column in the schema migration.",
+        "project": "fieldnote",
+        "state": {
+          "old_clients_present": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [
+          "L-schema"
+        ],
+        "relevant": [
+          "E-schema"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "14",
+      "label": "Client compatibility unknown",
+      "category": "uncertainty",
+      "split": "illustrative",
+      "task": {
+        "query": "Rename the title column in the schema.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-schema",
+          "E-schema"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "E-schema",
+          "L-schema"
+        ],
+        "gaps": {
+          "schema_compatibility": "conditional"
+        }
+      }
+    },
+    {
+      "id": "15",
+      "label": "An unrelated button change",
+      "category": "negative",
+      "split": "illustrative",
+      "task": {
+        "query": "Change the primary button color in settings.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-brand"
+        ],
+        "forbidden": [
+          "L-operation",
+          "L-schema",
+          "C-offline",
+          "C-expired"
+        ],
+        "relevant": [
+          "C-brand"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "16",
+      "label": "Visual spacing",
+      "category": "negative",
+      "split": "illustrative",
+      "task": {
+        "query": "Adjust the editor spacing and typography.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-brand"
+        ],
+        "forbidden": [
+          "L-operation",
+          "C-offline"
+        ],
+        "relevant": [
+          "C-brand"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "17",
+      "label": "Production release",
+      "category": "explicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Prepare the production release.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-release"
+        ],
+        "forbidden": [
+          "C-future"
+        ],
+        "relevant": [
+          "C-offline",
+          "C-release"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "18",
+      "label": "Search feature with an implicit privacy constraint",
+      "category": "implicit",
+      "split": "illustrative",
+      "task": {
+        "query": "Add faster search to private notes.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-search"
+        ],
+        "forbidden": [
+          "L-operation"
+        ],
+        "relevant": [
+          "C-search"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "19",
+      "label": "Conflicting retention records",
+      "category": "conflict",
+      "split": "illustrative",
+      "task": {
+        "query": "Implement deleted-note retention and scheduled purge.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-retention-30",
+          "C-retention-90"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "C-retention-30",
+          "C-retention-90"
+        ],
+        "gaps": {
+          "retention_rule": "conflicted"
+        }
+      }
+    },
+    {
+      "id": "20",
+      "label": "Cross-project isolation",
+      "category": "scope",
+      "split": "illustrative",
+      "task": {
+        "query": "Explain the hosted database architecture.",
+        "project": "shopfront",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "S-hosting"
+        ],
+        "forbidden": [
+          "D-local",
+          "C-offline",
+          "C-host-current"
+        ],
+        "relevant": [
+          "S-hosting"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "21",
+      "label": "Combined search and hosting",
+      "category": "composition",
+      "split": "illustrative",
+      "task": {
+        "query": "Add a hosted search index.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-search",
+          "C-host-current",
+          "C-offline"
+        ],
+        "forbidden": [
+          "C-host-old"
+        ],
+        "relevant": [
+          "C-host-current",
+          "C-offline",
+          "C-search"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "22",
+      "label": "Combined storage and collaboration",
+      "category": "composition",
+      "split": "illustrative",
+      "task": {
+        "query": "Rework the SQLite storage for collaboration across multiple devices.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "D-local",
+          "C-offline"
+        ],
+        "forbidden": [
+          "D-unreviewed"
+        ],
+        "relevant": [
+          "C-host-current",
+          "C-offline",
+          "D-local"
+        ],
+        "gaps": {
+          "access_policy": "missing",
+          "storage_assumption": "conditional"
+        }
+      }
+    },
+    {
+      "id": "23",
+      "label": "Unknown task wording",
+      "category": "planner_blindspot",
+      "split": "illustrative",
+      "task": {
+        "query": "Let two colleagues change the same document at once.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-offline",
+          "D-local"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "C-offline",
+          "D-local"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "24",
+      "label": "Unknown disconnected-work wording",
+      "category": "planner_blindspot",
+      "split": "illustrative",
+      "task": {
+        "query": "Keep the editor usable on a flight with no signal.",
+        "project": "fieldnote",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-offline"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "C-offline"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "25",
+      "label": "Missing evidence in an empty project",
+      "category": "uncertainty",
+      "split": "illustrative",
+      "task": {
+        "query": "Implement the login flow.",
+        "project": "new-project",
+        "state": {},
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [],
+        "relevant": [],
+        "gaps": {
+          "auth_policy": "missing"
+        }
+      }
+    },
+    {
+      "id": "26",
+      "label": "Agent supplies task features",
+      "category": "caller_plan",
+      "split": "illustrative",
+      "task": {
+        "query": "Let two colleagues change the same document at once.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": false
+        },
+        "as_of": "2026-09-12",
+        "actions": [
+          "sharing"
+        ],
+        "needs": [
+          "offline_mode",
+          "storage_assumption",
+          "access_policy"
+        ]
+      },
+      "expected": {
+        "required": [
+          "C-offline",
+          "D-local"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "C-host-current",
+          "C-offline",
+          "D-local"
+        ],
+        "gaps": {
+          "access_policy": "missing",
+          "storage_assumption": "conditional"
+        }
+      }
+    },
+    {
+      "id": "27",
+      "label": "Evidence bundle required",
+      "category": "dependency",
+      "split": "illustrative",
+      "task": {
+        "query": "What did the old desktop clients teach us about migration?",
+        "project": "fieldnote",
+        "state": {
+          "old_clients_present": true
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "L-schema",
+          "E-schema"
+        ],
+        "forbidden": [],
+        "relevant": [
+          "E-schema",
+          "L-schema"
+        ],
+        "gaps": {}
+      }
+    },
+    {
+      "id": "28",
+      "label": "Mixed interface and synchronization task",
+      "category": "composition",
+      "split": "illustrative",
+      "task": {
+        "query": "Add a sync status button and retry failed uploads.",
+        "project": "fieldnote",
+        "state": {
+          "single_device": true,
+          "http_method": "POST",
+          "idempotency_verified": false
+        },
+        "as_of": "2026-09-12"
+      },
+      "expected": {
+        "required": [
+          "C-brand",
+          "C-offline",
+          "L-operation",
+          "E-duplicate"
+        ],
+        "forbidden": [
+          "L-read"
+        ],
+        "relevant": [
+          "C-brand",
+          "C-offline",
+          "D-local",
+          "E-duplicate",
+          "L-operation"
+        ],
+        "gaps": {}
+      }
+    }
+  ]
+}
