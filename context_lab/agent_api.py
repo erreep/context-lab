@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from . import knowledge as knowledge_mod
-from .engine import catalog, compile_context
+from .engine import catalog, compile_context, plan_task
 from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
 from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
@@ -91,11 +91,17 @@ def context(store, task, budget=1200, detail="agent"):
     if detail not in DETAIL_LEVELS:
         raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
     compact = detail in {"agent", "prose"}
-    select_budget = budget
     flags = provider_flags(store)
-    view, wire_text = None, ""
+    # Plan once. Shrink packs the same planned task; only the final packet is saved.
+    planned = plan_task(task, planner=flags["planner"])
+    select_budget = budget
+    packet, view, wire_text = None, None, ""
     for _ in range(12):
-        packet = compile_context(store, task, budget=select_budget, **flags)
+        packet = compile_context(
+            store, planned, budget=select_budget,
+            embeddings=flags["embeddings"], planner=None, persist=False,
+            planning_metadata=planned.get("planning"),
+        )
         view, wire_text = format_context(packet, detail)
         if not compact or wire_estimated_tokens(wire_text) <= budget:
             break
@@ -109,6 +115,8 @@ def context(store, task, budget=1200, detail="agent"):
             field="budget",
             hint="Use memory_inspect_run for traces; do not widen the agent wire",
         )
+    packet = store.save_run(packet)
+    view, _ = format_context(packet, detail)
     return view
 
 

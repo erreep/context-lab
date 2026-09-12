@@ -382,26 +382,8 @@ class Store:
             src = self.source(sid)
             if src:
                 origin_refs.append({"id": sid, "sha256": src["sha256"], "ticket": src.get("ticket", "")})
-        summary_body = (
-            "Promotion summary (opaque origin refs only; ticket bodies not copied).\n"
-            f"origin_memory_id: {origin['id']}\n"
-            f"origin_project: {origin['project']}\n"
-            f"origin_ticket: {origin['ticket']}\n"
-            f"origin_version: {origin['version']}\n"
-            f"origin_kind: {origin['kind']}\n"
-            f"origin_title: {origin['title']}\n"
-            f"promoted_claim: {claim_text}\n"
-            f"origin_source_refs: {json.dumps(origin_refs, sort_keys=True)}\n"
-        )
-        summary = self.add_source({
-            "id": summary_id,
-            "project": origin["project"],
-            "ticket": "",
-            "title": "Promotion summary of " + origin["id"],
-            "body": summary_body,
-        })
+        # Resolve depends_on before any write so a failed promote leaves no summary source.
         kind = origin["kind"] if origin["kind"] != "standing_rule" else "lesson"
-        # Resolve depends_on into project/lab scope only; ticket deps must be promoted first.
         resolved_deps = []
         for dep_id in origin.get("depends_on", []):
             dep = self.memory(dep_id)
@@ -417,6 +399,26 @@ class Store:
             if dep.get("project") not in {origin["project"], GLOBAL_PROJECT}:
                 raise ValueError(f"promote cannot resolve depends_on {dep_id}: cross-project")
             resolved_deps.append(dep_id)
+        summary_body = (
+            "Promotion summary (opaque origin refs only; ticket bodies not copied).\n"
+            f"origin_memory_id: {origin['id']}\n"
+            f"origin_project: {origin['project']}\n"
+            f"origin_ticket: {origin['ticket']}\n"
+            f"origin_version: {origin['version']}\n"
+            f"origin_kind: {origin['kind']}\n"
+            f"origin_title: {origin['title']}\n"
+            f"promoted_claim: {claim_text}\n"
+            f"origin_source_refs: {json.dumps(origin_refs, sort_keys=True)}\n"
+        )
+        summary = {
+            "id": summary_id,
+            "project": origin["project"],
+            "ticket": "",
+            "title": "Promotion summary of " + origin["id"],
+            "body": summary_body,
+            "created_at": now(),
+            "sha256": hashlib.sha256(summary_body.encode()).hexdigest(),
+        }
         candidate = {
             "id": mem_id,
             "project": origin["project"],
@@ -440,7 +442,37 @@ class Store:
             candidate["valid_from"] = origin["valid_from"]
         if origin.get("valid_until"):
             candidate["valid_until"] = origin["valid_until"]
-        saved = self.put_memories([candidate])[0]
+        validated = validate_memory(candidate)
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            old_src = self.source(summary_id)
+            if old_src:
+                if any(old_src[k] != summary[k] for k in ("project", "ticket", "title", "body")):
+                    raise ValueError("Sources are immutable; create a new source ID")
+                summary = old_src
+            else:
+                self.db.execute(
+                    "INSERT INTO sources (id,project,title,body,created_at,sha256,ticket) VALUES (?,?,?,?,?,?,?)",
+                    tuple(summary[k] for k in ("id", "project", "title", "body", "created_at", "sha256", "ticket")),
+                )
+            existing = {m["id"]: m for m in self.memories()}
+            proposed = {**existing, validated["id"]: validated}
+            for sid in validated["source_ids"]:
+                if not self.source(sid):
+                    raise ValueError(f"Missing evidence source: {sid}")
+            for ref in validated["depends_on"] + validated["supersedes"]:
+                if ref not in proposed or not scope_covers(proposed[ref], validated):
+                    raise ValueError(f"Missing or cross-scope memory reference: {ref}")
+            timestamp = now()
+            self.db.execute(
+                "INSERT INTO memories VALUES (?,?,?,?)",
+                (validated["id"], 1, timestamp, json.dumps(validated)),
+            )
+            saved = dict(validated, version=1, recorded_at=timestamp)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         return {
             "memory": saved,
             "summary_source": summary,

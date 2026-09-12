@@ -1,10 +1,16 @@
 """Cross-ticket promotion with scoped summary evidence and opaque provenance."""
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
 
 from context_lab.engine import compile_context
 from context_lab.store import Store
+
+
+def promo_ids(origin_id, project, claim):
+    key = hashlib.sha256(f"{origin_id}|{project}|{claim}".encode()).hexdigest()[:16]
+    return "src-promo-" + key, "mem-promo-" + key
 
 
 class PromoteTests(unittest.TestCase):
@@ -34,7 +40,6 @@ class PromoteTests(unittest.TestCase):
         self.assertEqual(mem["source_ids"], [result["summary_source"]["id"]])
         self.assertNotIn(self.src["body"], result["summary_source"]["body"])
         self.assertIn("mem-ticket", result["summary_source"]["body"])
-        # Baseline cannot cite ticket source directly.
         with self.assertRaises(ValueError):
             self.store.put_memories([{
                 "id": "bad", "project": "app", "ticket": "", "kind": "lesson",
@@ -85,6 +90,37 @@ class PromoteTests(unittest.TestCase):
         }])
         with self.assertRaisesRegex(ValueError, "ticket-scoped depends_on"):
             self.store.promote("mem-bad-dep")
+
+    def test_failed_promote_leaves_no_summary_and_allows_retry(self):
+        claim = "needs ticket dep then fixed"
+        self.store.put_memories([{
+            "id": "mem-bad-dep", "project": "app", "ticket": "T-1", "kind": "lesson",
+            "status": "confirmed", "title": "Bad", "claim": claim,
+            "source_ids": [self.src["id"]], "depends_on": ["mem-ticket"],
+        }])
+        with self.assertRaisesRegex(ValueError, "ticket-scoped depends_on"):
+            self.store.promote("mem-bad-dep")
+        src_id, mem_id = promo_ids("mem-bad-dep", "app", claim)
+        self.assertIsNone(self.store.source(src_id))
+        self.assertIsNone(self.store.memory(mem_id))
+
+        dep_src = self.store.add_source({
+            "project": "app", "ticket": "", "title": "base", "body": "baseline support",
+        })
+        self.store.put_memories([{
+            "id": "mem-dep", "project": "app", "ticket": "", "kind": "lesson",
+            "status": "confirmed", "title": "Dep", "claim": "baseline support",
+            "source_ids": [dep_src["id"]],
+        }])
+        bad = self.store.memory("mem-bad-dep")
+        # Bump origin version so a leftover summary from the old order would conflict.
+        self.store.put_memories([dict(
+            bad, depends_on=["mem-dep"], expected_version=bad["version"],
+        )])
+        result = self.store.promote("mem-bad-dep")
+        self.assertFalse(result["idempotent"])
+        self.assertEqual(result["memory"]["depends_on"], ["mem-dep"])
+        self.assertIsNotNone(self.store.source(src_id))
 
 
 if __name__ == "__main__":
