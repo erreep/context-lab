@@ -1,118 +1,190 @@
 # Context Lab
 
-A runnable MVP for testing **when a memory should affect an agent's next decision**.
+Context Lab is a local memory lab for testing when a memory should affect an agent's next decision. You run it on your machine, store evidence and scoped memories in SQLite, and build task-targeted context packets at recall time. It is an experiment, not a hosted service and not production-ready.
 
-Includes a local browser interface, Python CLI, SQLite memory store, a minimal stdio
-MCP server, optional model adapters, and a synthetic comparison suite. Python 3.10+
-is required. The default application has **no third-party Python dependencies**.
-Tested here with Python 3.12.
+You get two surfaces that share one database:
 
-## Start in one command
+- **Agent integration (primary).** A stdio MCP server with nine tools for initiate, recall, observe, propose, and feedback.
+- **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
 
-Unzip the package, open a terminal in `context-lab`, and run:
+Default install uses the Python standard library only. There is no pip package yet. Python 3.10+ is required. Tested here with 3.12.
+
+## Why Context Lab
+
+Long-lived agent memory has two separate problems: preserving information, and selecting the right information for the next decision. Context Lab focuses on the second problem.
+
+Evidence and reviewed memories live in SQLite. Recall layers them by scope and builds a compact packet for a specific task. Proposed lessons do not become active just because an agent wrote them. A human confirms candidates in the workbench first.
+
+## Start locally
 
 ```bash
+git clone https://github.com/erreep/context-lab
+cd context-lab
 python3 start.py
 ```
 
-On Windows, use `python start.py` if that is your Python command. Open
-**http://127.0.0.1:8765** in your browser. Press Ctrl+C in the terminal to stop.
-For a busy port: `python3 start.py --port 8766`.
+On Windows, use `python start.py` if that is your Python command. Open **http://127.0.0.1:8765**. Press Ctrl+C to stop. For a busy port: `python3 start.py --port 8766`.
 
-The launcher seeds an empty database with the fictional Fieldnote project. It never
-overwrites existing records. Data is saved locally to `workspace/memory.sqlite3`.
-The server listens only on localhost. It is a local experiment, not a hosted service.
+The launcher binds localhost only. Data persists to `workspace/memory.sqlite3`. An empty database is seeded once with a fictional demo corpus. Existing records are never overwritten.
 
-The local UI is a workbench for the current project and ticket. Lab-wide standing
-rules appear as the first layer of that workspace, not as a separate project.
-Confirm candidates on the review desk. Preview what an agent would receive from
-Agent preview. Lab tools hold standing-rule writes, benchmark, and export.
-
-## Try these five things
-
-1. **Agent preview → Background uploads after reconnect.** Choose the scenario, then
-   Preview context. Expand “Why these records?” Compare methods shows the other two
-   arms. Targeted brings the offline constraint and the complete duplicate-prevention
-   evidence.
-2. **Duplicate prevention already verified.** Watch a formerly useful lesson become
-   inapplicable. Unknown state is handled differently from a known exception.
-3. **Team sharing changes an assumption.** The old architecture decision is retained,
-   but its single-device assumption is flagged for reconsideration. The access policy
-   remains missing instead of being invented.
-4. **Conflicting retention records.** Neither contradictory value is treated as settled.
-5. **Lab → Benchmark.** Run the comparison suite. Inspect every case, including the two
-   paraphrases the starter task rules miss. “Agent supplies task features” shows the
-   intended integration path for such wording.
-
-## What the three modes compare
-
-| Mode | Available records | Selection |
-|---|---|---|
-| A: `retrieval` | Facts, events, decisions, constraints | BM25, optionally fused with real model embeddings |
-| B: `lessons` | Same records plus confirmed lessons | Same retriever and content representation |
-| C: `targeted` | Same records as B | Retriever plus action/need activation, applicability checks, complete dependency bundles, need coverage and budget selection |
-
-All modes share project isolation, date filtering, candidate exclusion, supersession,
-the same task features, the same formatting policy and the same context budget.
-Their evidence-check footer uses the same declared-need assessor. The C arm also
-spells out individual applicability checks in its context. These are bundled design
-comparisons, not a causal isolation of each individual mechanism.
-
-**The default retriever is lexical BM25, not hybrid semantic search.** Enabling an
-embedding endpoint makes it hybrid using reciprocal rank fusion. There are no fake
-or hash-based “semantic embeddings.”
-
-## What is real, and what is a scaffold
-
-- **Implemented:** persistence, immutable evidence, revision history, optimistic
-  concurrency checks, project/date filtering, supersession, conditional activation,
-  exceptions, dependency bundles, conflict reporting, estimated-token budgeting,
-  run snapshots and feedback diagnosis.
-- **Implemented, optional:** model-assisted task planning, drafting candidate lessons
-  from a source, exact-excerpt validation and cached model embeddings.
-- **Scaffold:** the demo's 20 memories and 28 scenarios are authored fixtures. The
-  default task planner uses the inspectable patterns in `data/task_rules.json`.
-- **Not implemented:** automatic verified learning, a nightly scheduler, live agent
-  action execution, learned utility ranking, universal semantic conflict detection,
-  or a proof that context is sufficient. A prompted draft is not a verified lesson.
-
-The initial comparison is deliberately a context-selection experiment. It does not
-claim an improvement in real agent task completion. See `results/benchmark.md` and
-the complete per-case `results/benchmark.json` for the saved run and limitations.
-
-## Use your own observations
-
-For a clean store without fictional records:
+For a clean store without demo data:
 
 ```bash
 python3 -m context_lab --db workspace/my-memory.sqlite3 serve
 ```
 
-1. Open **Evidence**. Set your project name and paste the original observation.
-2. Open **Memories → New memory**. Link `source_ids` to the saved source ID.
-3. Write a scoped claim, its conditions and expected effect. Keep tentative
-   generalizations as `candidate`. Review the evidence before confirming them.
-4. Test with a task that should activate the memory, one where it should stay quiet,
-   and one where its validity is unknown.
+## How it works
 
-You can also copy and adapt `examples/import.json`:
+1. You choose a project and, when relevant, an exact ticket.
+2. An agent recalls context for the decision it is about to make.
+3. The agent can read linked evidence, record observations, and propose candidate memories.
+4. You review candidates in the local workbench.
+5. Confirmed memories can affect later targeted recall in the same scope.
+6. The agent can report feedback against the saved recall run.
 
-```bash
-python3 -m context_lab --db workspace/my-memory.sqlite3 import examples/import.json
+Recall layers scopes in this order:
+
+```text
+__global__ lab rules → project baseline → exact ticket
 ```
 
-Sources are committed individually; the memory batch is atomic. If the memory batch
-fails validation, already-imported immutable sources remain available. Importing an
-existing memory requires `expected_version`; it never silently replaces it.
+Sibling tickets stay isolated. Omitting `ticket` means project baseline, not every ticket. Lab-wide writes are rare and require explicit user approval plus `confirm_global=true`.
 
-## Memory schema and semantics
+## Agent integration
+
+MCP is the primary integration path. Point your agent client at the stdio server on your SQLite database.
+
+Cursor ships an example config at `.cursor/mcp.json` (database path `workspace/memory.sqlite3`). Enable the `context-lab` MCP server when prompted. Optional agent guidance lives in `.cursor/rules/context-lab-memory.mdc` and `.cursor/skills/context-lab-memory`. For a generic template, see `examples/mcp-config.json`.
+
+### Hard gates
+
+Call `memory_context` before:
+
+1. After `memory_initiate` or `memory_allocate_ticket` (or after you choose an existing project/ticket scope), before other work.
+2. Before every `git commit` or `git push`.
+3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
+
+Setup is not recall. Initializing a ticket does not load standing rules until you call `memory_context`.
+
+Candidates never affect retrieval until you confirm them in the workbench. A prior agent suggestion is not a confirmed project change.
+
+### Suggested agent loop
+
+1. **Initiate scope** once per project/ticket (`memory_initiate`). Allocate a ticket id if the user has notes but no ticket yet (`memory_allocate_ticket`).
+2. **Discover vocabulary** when needed (`memory_catalog`).
+3. **Recall before deciding** (`memory_context` with query, project, optional ticket, actions, needs, and known state).
+4. **Read evidence** when a condition or rationale matters (`memory_source`).
+5. **Record observations** after work (`memory_observe`).
+6. **Propose generalizations** as candidates (`memory_propose`). Optional Mem0-assisted extraction (`memory_extract`).
+7. **Report outcomes** using the `run_id` from context (`memory_feedback`).
+
+Suggested instruction block for agent prompts:
+
+> Before a decision that depends on project history, call memory_context with the next action, known current state, and project. Read linked sources when a condition or rationale matters. Resolve consequential gaps. After an observed outcome, record the evidence. Propose generalizations as candidates and report missed context using the run_id. A previous agent's suggestion is not a confirmed project change.
+
+### MCP tools
+
+| Tool | Purpose |
+|---|---|
+| `memory_initiate` | Check, initialize once, or explicitly refresh a project/ticket knowledge base |
+| `memory_allocate_ticket` | Mint a work-unit ticket id (`work-YYYYMMDD-HHMMSS` UTC) when the user has notes but no ticket yet |
+| `memory_catalog` | List starter action and need vocabulary for task features |
+| `memory_context` | Build a targeted context packet from layered scopes; saves a run snapshot |
+| `memory_source` | Read immutable evidence by ID within scope |
+| `memory_observe` | Append an observation source (evidence only) |
+| `memory_extract` | Run local Mem0/Ollama extraction on one saved observation into candidates |
+| `memory_propose` | Store structured candidate memories for human review |
+| `memory_feedback` | Report helpful/missed/irrelevant/stale and diagnose pipeline stage |
+
+### Agent recall vs evaluation
+
+Agents call `memory_context`. That always runs the **targeted** selector: retriever plus action/need activation, applicability checks, dependency bundles, need coverage, and budget selection.
+
+The offline benchmark compares three bundled arms on the same records and task features:
+
+| Arm | What differs |
+|---|---|
+| A: retrieval | Facts, events, decisions, constraints; BM25 (optionally hybrid with real embeddings) |
+| B: lessons | Same as A plus confirmed lessons |
+| C: targeted | Same records as B plus activation, applicability, dependencies, and need-aware selection |
+
+These arms are evaluation comparisons. MCP does not expose a strategy picker. The arms share project isolation, date filtering, candidate exclusion, supersession, formatting, and budget policy. The comparison does not isolate each mechanism causally.
+
+The default retriever is lexical BM25, not hybrid semantic search. Enabling a real embedding endpoint makes retrieval hybrid via reciprocal rank fusion. There are no fake or hash-based "semantic embeddings."
+
+### CLI fallback
+
+Without MCP, write a task JSON and invoke:
+
+```bash
+python3 -m context_lab context --task examples/agent-task.json --text
+```
+
+Without `--text`, the response includes selection traces, need statuses, and a `run_id`. Supply project state from inspected evidence. Do not infer `false` from a missing key. For arbitrary domains, provide your own `actions` and `needs`, or extend the catalog.
+
+### MCP transport
+
+The server implements a minimal newline-delimited stdio JSON-RPC tool subset based on the [2025-11-25 MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools). It does not implement Streamable HTTP, roots, resources, sampling, or task extensions. Test compatibility with your particular client.
+
+## Workbench
+
+The browser UI is a workbench for the current project and ticket. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
+
+### Layer stack
+
+Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix.
+
+### Review desk
+
+Confirm or retract candidate memories. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+
+### Agent preview
+
+Choose project, ticket, and task features, then preview the context packet an agent would receive. Compare methods shows the three evaluation arms side by side for debugging. It is not the primary agent path.
+
+### Lab menu
+
+Standing-rule writes (lab-wide requires explicit user approval), the bundled benchmark runner, and export. Use a separate agent conversation per ticket to avoid carrying old chat context.
+
+## Memory model
+
+Context Lab separates immutable evidence (sources) from scoped memory records (facts, constraints, decisions, events, lessons). Recall is selection at decision time, not a full dump of everything ever written.
+
+### Scopes and layering
+
+1. **Lab-wide** (`project=__global__`, empty ticket): rare standing rules. Agents must ask the user and pass `confirm_global=true` before writing them.
+2. **Project baseline** (project set, empty ticket): durable project knowledge.
+3. **Exact ticket** (project + ticket id): work-unit-specific notes and memories.
+
+Omitting `ticket` means project baseline only (plus lab-wide), not all tickets. Pass `ticket` alongside `project` in context tasks, source reads, observations, and proposed memories.
+
+### Candidate gate
+
+| Status | Retrieval behavior |
+|---|---|
+| `candidate` | Visible in workbench; excluded from agent recall |
+| `confirmed` | Eligible for targeted selection (subject to applicability) |
+| `retracted` | Excluded |
+
+Imported ticket-note excerpts are indexed documents, not confirmed facts or lessons. They can be retrieved as references but do not count as declared-need coverage.
+
+### Retrieval and non-guarantees
+
+- BM25 by default. Hybrid mode requires a configured embedding endpoint returning real vectors.
+- Need coverage checks metadata tags, not semantic entailment or completeness.
+- Applicability uses declared actions, state predicates, and exceptions. Unknown state yields conditional results, not guessed values.
+- Conflicts flag contradictory assertion keys for relevant needs. Prose-only contradictions are not detected.
+- Budget uses `ceil(UTF-8 bytes / 4)` units, not provider token counts. The selector is a transparent greedy heuristic, not a learned optimizer. Evidence bundles are withheld rather than partially truncated.
+
+### Memory record shape
 
 ```json
 {
   "id": "lesson-retry-1",
   "project": "my-project",
+  "ticket": "PROJ-123",
   "kind": "lesson",
-  "status": "confirmed",
+  "status": "candidate",
   "title": "Preserve operation identity",
   "claim": "Repeated delivery needs duplicate prevention.",
   "rationale": "The earlier request was delivered twice.",
@@ -126,243 +198,143 @@ existing memory requires `expected_version`; it never silently replaces it.
 }
 ```
 
-- `kind`: `fact`, `constraint`, `decision`, `event`, or `lesson`.
-- `status`: `candidate`, `confirmed`, or `retracted`. Confirmation records a review
-  decision; it does not prove a claim true.
-- `applies.actions_any`: at least one action must match. An empty list imposes no
-  action restriction; it does not force retrieval on every task.
-- `applies.state_equals`: all exact state predicates must hold. Missing/null state
-  produces a conditional result, not a guessed value.
-- `unless`: a conjunction of exception predicates. If all hold, exclude the memory.
-  If an exception could apply but its state is unknown, mark the memory conditional.
-- `assumptions`: unknown or changed assumptions cause reconsideration rather than
-  deleting the historical decision.
-- `need_tags`: declared information needs supported by the record. Coverage is a
-  metadata check, not semantic entailment or a guarantee of completeness.
-- `assertions`: scalar claims such as `{"retention_days": 30}`. Different active
-  values for the same assertion key flag a conflict for relevant declared needs.
-  This will not discover contradictions expressed only in prose.
-- `depends_on`: other memory records that must accompany this record in the targeted
-  arm. Missing, retracted or expired support blocks the dependent lesson. Dependencies
-  are evidence, so their own action activation need not match the new task.
-- `supersedes`: retires earlier memory IDs from the replacement's effective date.
-  Retirement is transitive and persists after replacement expiry/retraction, avoiding
-  accidental resurrection. Create a new explicit replacement to restore an old rule.
-- `valid_from` is inclusive; optional `valid_until` is exclusive. `as_of` queries use
-  effective dates and the latest stored revisions. They do **not** reconstruct what
-  was known at an earlier ingestion time; this is not full bitemporal storage.
-- `quote`, when present, must occur verbatim in a linked source. Matching an excerpt
-  verifies provenance, not that the lesson's generalization follows from it.
-- Every revision stores a new version. Pass `expected_version` to update existing IDs.
-  IDs cannot move projects. Dependency and supersession cycles are rejected.
+Field notes:
 
-Budget units are `ceil(UTF-8 bytes / 4)`, not provider token counts. The complete
-emitted context, including gaps and warnings, must fit. Evidence bundles are withheld
-instead of being partially truncated. A very large task/header can require increasing
-the budget. The selector is a transparent greedy heuristic, not a learned optimizer.
+- **`kind`:** `fact`, `constraint`, `decision`, `event`, or `lesson`.
+- **`status`:** `candidate`, `confirmed`, or `retracted`.
+- **`applies.actions_any`:** at least one action must match; an empty list imposes no action restriction.
+- **`applies.state_equals`:** all predicates must hold; missing state is conditional, not false.
+- **`unless`:** conjunction of exception predicates; unknown exception state marks the memory conditional.
+- **`need_tags`:** declared information needs this record supports.
+- **`depends_on`:** companion records required in targeted recall; missing or retracted support blocks the dependent lesson.
+- **`supersedes`:** retires earlier IDs from the replacement's effective date (transitive).
+- **`valid_from` / `valid_until`:** inclusive start, exclusive end. Date queries use effective dates and latest revisions. This is not full bitemporal storage.
+- **`quote`:** when present, must occur verbatim in a linked source (provenance check, not proof of generalization).
+- Updates require `expected_version`. IDs cannot change projects.
 
-## Initialize a ticket knowledge base once
+### Add your own observations
 
-The `context-lab` skill in `skills/context-lab` guides setup through the agent's
-question picker (or a conversational question). Select the skill and write
-`/initiate`; in Codex CLI you can mention it as `$context-lab /initiate`.
-The skill asks for the project/ticket identity if missing, checks saved setup,
-then asks for an existing notes folder or an empty knowledge base only when needed.
+1. Save evidence in the layer stack or via MCP `memory_observe`.
+2. Propose scoped memories linked to `source_ids` (`memory_propose` or the workbench), keeping tentative claims as `candidate`.
+3. Confirm accurate candidates on the review desk.
+4. Test recall with tasks that should activate the memory, stay quiet, or mark validity unknown.
 
-The same operation is available through `memory_initiate` or the CLI:
+Bulk import:
 
 ```bash
-# Check first; returns needs_knowledge_base or already_initialized.
+python3 -m context_lab --db workspace/my-memory.sqlite3 import examples/import.json
+```
+
+Sources commit individually; the memory batch is atomic. Importing an existing memory requires `expected_version`.
+
+## Ticket knowledge base
+
+Ticket setup is vault-first and agent-driven. There is no UI initiate/import. Use MCP or CLI.
+
+### Initiate once per project/ticket
+
+On first touch, Context Lab tries to auto-detect an Obsidian vault from local Obsidian config (and shallow common folders). If found, it binds the vault and reports `obsidian.auto_detected`. If none is found, `memory_initiate` returns `needs_obsidian_vault` until you pass `knowledge.vault` as a folder path or `"none"`.
+
+Prefer `knowledge={ "mode": "auto" }` (or `import`, `empty`, `reuse`) over ad-hoc flags.
+
+If you want ticket-scoped notes but have no ticket yet, call `memory_allocate_ticket` (or `python3 -m context_lab allocate-ticket`) to mint `work-YYYYMMDD-HHMMSS` UTC, then initiate with that ticket id.
+
+CLI equivalents:
+
+```bash
+# First project touch: pass --vault PATH or --no-vault if auto-detect is not enough.
 python3 -m context_lab initiate --project my-project --ticket PROJ-123
-# Import the selected folder once, including subfolders.
-python3 -m context_lab initiate --project my-project --ticket PROJ-123 --path '/path/to/Obsidian/ticket notes'
-# Alternatively, record an empty setup.
+
+# Import a notes folder once (includes subfolders).
+python3 -m context_lab initiate --project my-project --ticket PROJ-123 --path '/path/to/ticket-notes'
+
+# Record an empty setup.
 python3 -m context_lab initiate --project my-project --ticket PROJ-456 --empty
-# Rescan only when explicitly requested; reuses the saved folder.
+
+# Rescan only when explicitly requested.
 python3 -m context_lab initiate --project my-project --ticket PROJ-123 --refresh
 ```
 
-Setup is stored in SQLite under the exact project/ticket pair, so it survives
-agent conversations and restarts. Ordinary initiation never rescans an existing
-setup, even if a path is supplied again. A failed import does not mark setup
-complete; a failed refresh preserves the previous searchable snapshot.
+Setup is stored in SQLite under the exact project/ticket pair. Ordinary initiation never rescans an existing setup, even if a path is supplied again. A failed import does not mark setup complete. A failed refresh preserves the previous searchable snapshot.
 
-The importer reads UTF-8 `.md`, `.markdown` and `.txt` files without modifying
-them. It splits notes at Markdown headings and into bounded excerpts, assigns
-keyword categories from paths/headings, and uses the existing BM25 retriever.
-Hidden files, symlinks and unsupported formats are skipped; links are not followed.
-Limits are 2 MB per note, 20 MB total and 20,000 excerpts per selected folder.
-Categorization is a local heuristic, not model-based semantic classification.
+### Importer behavior
 
-Imported excerpts are `document` references with `indexed` status, kept separately
-from reviewed memories. They can be retrieved immediately, but are not confirmed
-facts or lessons and do not count as declared-need coverage. Original evidence
-snapshots remain available after refresh. Learned lessons still require review.
+Reads UTF-8 `.md`, `.markdown`, and `.txt` without modifying source files. Splits notes at Markdown headings into bounded excerpts, assigns keyword categories from paths and headings, and indexes with the same BM25 retriever. Skips hidden files, symlinks, and unsupported formats. Does not follow links. Session journal folders under `Cl/` are skipped on import. There is no server-side journal write API yet.
 
-Pass `ticket` alongside `project` in context tasks, source reads, observations and
-proposed memories. Retrieval layers scopes: sparse **lab-wide** (`project=__global__`,
-no ticket) → **project baseline** (empty ticket) → **exact ticket**. Sibling tickets
-never mix. Omitting `ticket` means project baseline only (plus lab-wide), **not all
-tickets**. Lab-wide standing rules are rare: agents must ask the user and pass
-`confirm_global=true` before writing them; they load into every `memory_context`
-and are best-effort synced into local Mem0 on `python3 start.py`. Choose only the
-folder you want available for that ticket.
-The UI's saved-knowledge-base selector fills both fields for context previews.
-Use a separate agent conversation per ticket to avoid carrying old chat messages.
+Limits: 2 MB per note, 20 MB total, 20,000 excerpts per selected folder. Categorization is a local heuristic, not model-based classification.
 
-For complete recovery, retain the SQLite database: it includes setup and searchable
-snapshots. JSON export includes those snapshots for inspection, but JSON import
-supports sources/memories only and rejects exports containing knowledge bases.
+For complete recovery, retain the SQLite database. JSON export includes snapshots for inspection, but JSON import supports sources and memories only and rejects exports containing knowledge bases.
 
-## Connect an agent
+## What is implemented vs scaffold
 
-**CLI:** have an agent write a task object, then invoke:
+**Implemented**
 
-```bash
-python3 -m context_lab context --task examples/agent-task.json --text
-```
+- Persistence, immutable evidence, revision history, optimistic concurrency
+- Project and date filtering, supersession, conditional activation, exceptions
+- Dependency bundles, conflict reporting, estimated-token budgeting
+- Run snapshots and feedback diagnosis
+- Targeted context assembly via MCP and CLI
+- Vault-aware initiate and ticket note import
 
-Without `--text`, the response includes selection traces, need statuses and a `run_id`.
-Supply project state from inspected evidence. Do not infer “false” from a missing key.
-For arbitrary domains, provide your own `actions` and `needs`, or extend the catalog.
+**Implemented, optional**
 
-**MCP / Cursor agents:** `.cursor/mcp.json` starts the stdio server on
-`workspace/memory.sqlite3`. An empty database is seeded with the demo corpus on first
-launch; existing records are never replaced. Enable the `context-lab` MCP server in
-Cursor if prompted. Rule `.cursor/rules/context-lab-memory.mdc` and skill
-`.cursor/skills/context-lab-memory` tell agents when to recall, observe, propose, and
-give feedback.
+- Model-assisted task planning and drafting candidate lessons from a source
+- Exact-excerpt validation and cached model embeddings when an endpoint is configured
+- Local Mem0 extraction bridge into candidates
 
-For other clients, copy `examples/mcp-config.json` and keep the `${workspaceFolder}`
-paths or substitute absolutes. The launcher works without a client-specific working
-directory.
+**Scaffold**
 
-Exposed tools:
+- Demo corpus (20 memories, 28 scenarios) and default task patterns in `data/task_rules.json`
+- Bundled benchmark cases in `data/scenarios.json`
 
-| Tool | Purpose |
-|---|---|
-| `memory_initiate` | Check, initialize once, or explicitly refresh a project/ticket knowledge base |
-| `memory_catalog` | Discover the starter action/need vocabulary |
-| `memory_context` | Build a compact, targeted packet and save a run snapshot |
-| `memory_source` | Read original evidence within a project |
-| `memory_observe` | Append an observation source |
-| `memory_extract` | Extract candidate facts from one scoped observation using local Mem0/Ollama |
-| `memory_propose` | Add candidate memories for review |
-| `memory_feedback` | Report usefulness or a failure and record its likely stage |
+**Not implemented**
 
-Suggested agent instruction:
+- Automatic verified learning, nightly scheduler, or background distillation
+- Live agent action execution or learned utility ranking
+- Universal semantic conflict detection or proof of context sufficiency
+- UI-side initiate/import, MCP strategy selection, pip install, or a journaling write API
 
-> Before a decision that depends on project history, call memory_context with the
-> next action, known current state and project. Read linked sources when a condition
-> or rationale matters. Resolve consequential gaps. After an observed outcome, record
-> the evidence. Propose generalizations as candidates and report missed context using
-> the run_id. A previous agent's suggestion is not a confirmed project change.
-
-The MVP exposes a minimal newline-delimited stdio MCP tool subset, based on the
-[2025-11-25 tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
-It does not implement Streamable HTTP, roots, resources, sampling or task extensions.
-Requests were checked with a local JSON-RPC client; compatibility with your particular
-agent client still needs testing.
+A prompted draft is not a verified lesson. The bundled benchmark is a context-selection experiment. It does not claim improvement in real agent task completion.
 
 ## Optional models
 
-Use an endpoint accepting chat-completions-style JSON and, optionally, embeddings.
-No model account or network request is needed for the default demo. Set variables in
-your own terminal; do not put credentials in source files or the browser UI.
+Configure a chat-completions-style HTTP endpoint and, optionally, embeddings. No model account is required for the default demo.
 
 ```bash
 export CONTEXT_LAB_BASE_URL=http://127.0.0.1:8000/v1
 export CONTEXT_LAB_MODEL=your-chat-model
 export CONTEXT_LAB_EMBEDDING_MODEL=your-embedding-model
-# If the endpoint requires authentication, set CONTEXT_LAB_API_KEY privately.
+# If the endpoint requires authentication:
+export CONTEXT_LAB_API_KEY=your-key
 python3 start.py
 ```
 
-Model controls become available in the UI when configured. The selected source text,
-tasks and/or indexed memory text are sent to the configured endpoint when those
-features are invoked. The adapter expects `choices[0].message.content` containing
-JSON and `data[].embedding` with ordered indexes. Provider-specific APIs may need a
-small adapter. Live model behavior was not evaluated in the delivered default run;
-adapter validation and caching were checked with mocks.
+Set variables in your own terminal. Do not put credentials in source files or the browser UI. Model controls appear in the UI when configured. The adapter expects `choices[0].message.content` JSON and ordered `data[].embedding` vectors.
 
 ```bash
 python3 -m context_lab draft --source src-incident
 python3 -m context_lab context --task examples/task.json --model-planner --embeddings
 ```
 
-Drafting returns candidate JSON without saving it. Exact source excerpts are checked;
-review the scope, assumptions and exceptions before importing. No reward learning,
-automatic promotion or background distillation scheduler is running.
+Drafting returns candidate JSON without saving it. No reward learning, automatic promotion, or background scheduler runs.
 
-## Optional Docker-free Mem0 sandbox
+## Optional Mem0 extraction
 
-Mem0 is not required by Context Lab and uses a separate store. To try its automatic
-extraction locally without changing Context Lab's dependency-free default:
+Mem0 is not required and uses a separate store under `<database-filename>.mem0/`. Context Lab loads Mem0 only for the extraction worker. The core app runs without it.
 
-```bash
-brew install ollama
-brew services start ollama
-ollama pull embeddinggemma:300m
-ollama pull qwen3:4b
-uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python mem0ai==2.0.20 ollama==0.6.2
-.venv/bin/python examples/mem0_local.py
-```
+When Ollama and optional packages are installed locally, you can extract candidate facts from a single saved observation (max 4000 UTF-8 bytes):
 
-The example disables Mem0 telemetry and keeps its embedded Qdrant vectors and history
-under `workspace/mem0`; no Qdrant server or Docker container runs. Ollama normally
-unloads idle models after five minutes. Unload them immediately with
-`ollama stop qwen3:4b` and `ollama stop embeddinggemma:300m`.
+- MCP: `memory_extract`
+- CLI: `python3 -m context_lab mem0-extract --source SOURCE_ID --project my-project --ticket PROJ-123`
+- UI: extract control on a saved observation (after optional `.venv` setup)
 
-## Connect local Mem0 to Context Lab
+This is an explicit one-way extraction bridge, not two-way synchronization or background conversation capture. Unreviewed Mem0 output is never injected directly into context. Repeat calls reuse persisted extraction results without overwriting reviewed candidates. One worker at a time per Mem0 store.
 
-With the optional packages installed in this repository's `.venv` and Ollama
-running with `qwen3:4b` and `embeddinggemma:300m`, start Context Lab normally.
-In **Evidence**, save an observation with its project/ticket, then click
-**Extract with local Mem0** on that source. This persists candidate facts and opens
-them in **Memories**. Read the linked evidence; to approve an accurate candidate,
-use **Edit**, set `status` to `confirmed`, and save the revision. Only then can it
-appear in the existing context builder or agent recall for that exact scope.
+For a standalone Mem0 sandbox without changing the dependency-free default, see `examples/mem0_local.py`.
 
-The same operation is exposed as the MCP tool `memory_extract` and the CLI:
+## Evaluation
 
-```bash
-python3 -m context_lab mem0-extract --source YOUR_SOURCE_ID --project my-project --ticket PROJ-123
-```
-
-Restart a running UI server after updating the code. Reconnect/restart the MCP
-server in your agent client to discover the new tool, or use the skill's CLI
-fallback. The launcher uses `.venv/bin/python` (`.venv/Scripts/python.exe` on Windows)
-for extraction when present, otherwise the current interpreter. The core app
-still runs without Mem0; optional packages are loaded only by the extraction worker.
-
-Both models are explicitly local at `127.0.0.1:11434`; no cloud fallback, Docker,
-automatic model downloads or telemetry is used by this bridge. Originals remain
-in Context Lab's SQLite store. Mem0 vectors/history are stored alongside it in
-`<database-filename>.mem0/` (normally `workspace/memory.sqlite3.mem0/`), separate from
-the standalone sandbox. Back up that folder too if retaining extraction history.
-
-Project/ticket entity IDs constrain Mem0's own recall during extraction. A separate
-source-level run ID prevents unrelated observations being attributed to the selected
-source. Returned identity and provenance are checked before any candidate is saved.
-Repeat calls recover persisted results without overwriting reviewed candidates.
-Unreviewed Mem0 records are never injected directly into context. This is an explicit
-extraction bridge, not two-way synchronization or background conversation capture.
-
-Limits: 4000 UTF-8 bytes per observation, 180 seconds per extraction, and one worker
-at a time per Mem0 store (a concurrent attempt reports busy; retry after it finishes).
-Long notes remain available through ordinary Obsidian indexing. Mem0/model output
-can miss facts; an empty result is not a verified finding. Use a focused excerpt
-when a source exceeds the local embedding model's practical input limit.
-
-Offline checks run with the normal test suite. For a real local two-ticket
-extraction/review/isolation test using only disposable synthetic data:
-
-```bash
-CONTEXT_LAB_MEM0_LIVE=1 python3 -m unittest discover -s tests -p test_mem0.py -v
-```
-
-## Run and extend evaluation
+The bundled benchmark compares the three arms on authored scenarios. Use it to inspect selection behavior, not as proof your agent improved.
 
 ```bash
 python3 -m context_lab demo
@@ -370,57 +342,49 @@ python3 -m context_lab benchmark --budget 1200
 python3 -m unittest discover -s tests -v
 ```
 
-Each case in `data/scenarios.json` separates `task` from `expected`. Only the task is
-sent to retrieval. Labels specify required, relevant and forbidden memory IDs, plus
-expected gap statuses. A context case passes when required records are present,
-forbidden records are absent, and the expected gap statuses match. Additional
-irrelevant records lower precision but do not by themselves fail a case. Recall is
-macro-averaged over cases with required records. Empty selections count as precision
-1 only when no records are required, otherwise 0. These conventions are explicit
-so small sample metrics are not mistaken for universal measures.
-
-The supplied cases are development illustrations. For meaningful evidence, freeze a
-version of the memory/rules, collect new real tasks before observing outputs, annotate
-required context independently, and compare the same agent/model/tool settings across
-arms. Evaluate actual outcomes and constraint violations, not just memory citations.
-Keep a separate holdout and report latency/cost including extraction, model planning
-and embedding cache conditions. Do not train rules on your final test cases.
-
-For a custom suite:
+Custom suite:
 
 ```bash
-python3 -m context_lab --db workspace/my-memory.sqlite3 benchmark --suite my-cases.json --out results/my-results.json
+python3 -m context_lab --db workspace/my-memory.sqlite3 benchmark \
+  --suite my-cases.json --out results/my-results.json
 ```
 
-The UI benchmark runs the bundled suite against the currently opened store. Its
-fictional labels are not meaningful for a store containing only your own data.
+Each case separates `task` from `expected` labels. Metrics follow explicit conventions in the codebase so small samples are not mistaken for universal measures. Saved runs live in `results/benchmark.md` and `results/benchmark.json`.
 
-## Persistence and feedback
+The UI benchmark runs the bundled suite against the open store. Fictional labels are not meaningful for a store containing only your own data.
 
-Use the UI's **Export data**, or:
+## CLI reference
+
+| Command | Purpose |
+|---|---|
+| `python3 start.py [--port]` | Launch workbench and server (seeds empty DB once) |
+| `python3 -m context_lab serve [--db]` | Serve UI on an existing database |
+| `python3 -m context_lab initiate …` | Ticket knowledge-base setup (`--vault` / `--no-vault`, `--path`, `--empty`, `--refresh`) |
+| `python3 -m context_lab allocate-ticket` | Mint a generated ticket id |
+| `python3 -m context_lab context --task …` | Build a context packet |
+| `python3 -m context_lab import …` / `export …` | JSON batch IO |
+| `python3 -m context_lab draft --source …` | Model-assisted candidate draft |
+| `python3 -m context_lab benchmark …` | Run the comparison suite |
+| `python3 -m context_lab mem0-extract …` | Optional Mem0 extraction |
+| `python3 -m context_lab mcp` | Start the stdio MCP server |
+| `python3 -m context_lab demo` | Seed the synthetic demo corpus without replacing existing memories |
+
+## Persistence and backup
+
+Export from the Lab menu or:
 
 ```bash
 python3 -m context_lab export --out my-context-backup.json
 ```
 
-Exports include original sources, current records, revisions and feedback. Saved
-SQLite databases also retain full run snapshots. JSON import restores current records,
-not the revision/run history; retain the database for a complete backup. Stop the
-server before copying the database and its accompanying WAL files.
+Exports include sources, current records, revisions, and feedback. SQLite also retains full run snapshots and ticket setup. JSON import restores current records, not revision or run history. Retain the database for a complete backup. Stop the server before copying the database and WAL files.
 
-Feedback diagnoses capture, retrieval, selection/budget, applicability/validity, or
-“supplied but reported missed” using the saved run. Feedback is user/agent-reported,
-not a causal assessment and not an automatically accepted test label.
+Feedback diagnoses capture, retrieval, selection/budget, applicability/validity, or "supplied but reported missed" using the saved run. Feedback is user- or agent-reported, not verified ground truth.
+
+## Project status
+
+This repository is clone-and-run source. It has no `pyproject.toml`, published package, or `LICENSE` file yet. Review those gaps before redistributing or depending on it as a library.
 
 ## Design references
 
-This prototype combines established patterns; no research novelty or production
-readiness is claimed. Design inspiration includes:
-
-- [ReasoningBank](https://arxiv.org/abs/2509.25140): experience distillation.
-- [ACE](https://arxiv.org/abs/2510.04618): incremental context updates.
-- [Sufficient Context](https://arxiv.org/abs/2411.06037): distinguish relevance from sufficiency.
-- [TriggerBench](https://arxiv.org/abs/2606.23459): remembering latent constraints at the right time.
-
-Our first experiment is intentionally smaller: does explicit applicability and
-dependency-preserving context assembly improve selection on a task with known needs?
+This prototype combines established patterns. No research novelty is claimed. Inspiration includes [ReasoningBank](https://arxiv.org/abs/2509.25140), [ACE](https://arxiv.org/abs/2510.04618), [Sufficient Context](https://arxiv.org/abs/2411.06037), and [TriggerBench](https://arxiv.org/abs/2606.23459). The first experiment asks a narrower question: does explicit applicability and dependency-preserving context assembly improve selection on tasks with known needs?
