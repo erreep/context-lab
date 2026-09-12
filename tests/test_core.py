@@ -146,7 +146,7 @@ class CoreTests(unittest.TestCase):
     def test_no_match_is_not_sufficient(self):
         p = self.packet("Let colleagues write together")
         self.assertEqual(p["needs"], [])
-        self.assertIn("No task action recognized", p["warnings"][0])
+        self.assertIn("no task action recognized", p["warnings"][0].lower())
 
     def test_caller_supplied_features_work_for_new_action(self):
         s = self.store.add_source({"id": "src-custom", "project": "custom", "title": "Rare operating constraint", "body": "Do not move a fragile sample while its seal is open."})

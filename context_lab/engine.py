@@ -51,6 +51,24 @@ def catalog():
     return json.loads((ROOT / "data" / "task_rules.json").read_text())
 
 
+def vocabulary(store, project):
+    """Catalog actions/needs unioned with tags from confirmed project memories."""
+    rules = catalog()
+    actions = set(rules.get("actions", {}))
+    needs = set(rules.get("needs", []))
+    for m in store.memories(project=project, ticket=""):
+        if m.get("status") != "confirmed":
+            continue
+        needs.update(m.get("need_tags", []))
+        actions.update(m.get("applies", {}).get("actions_any", []))
+    for m in store.memories(project=GLOBAL_PROJECT, ticket=""):
+        if m.get("status") != "confirmed":
+            continue
+        needs.update(m.get("need_tags", []))
+        actions.update(m.get("applies", {}).get("actions_any", []))
+    return {"actions": sorted(actions), "needs": sorted(needs)}
+
+
 def plan_task(raw, planner=None):
     if not isinstance(raw, dict):
         raise ValueError("Task must be an object")
@@ -98,7 +116,11 @@ def plan_task(raw, planner=None):
         raise ValueError("needs must be a list of strings")
     # Only caller-supplied state is authoritative. The planner cannot invent it.
     task.update(actions=sorted(set(actions)), needs=sorted(set(needs)))
-    task["planning"] = {"method": origin, "matched_rules": matched}
+    # MatchedAction when nonempty; UnknownParaphrase when regex/model found none.
+    match_kind = "MatchedAction" if task["actions"] else "UnknownParaphrase"
+    if origin == "caller_supplied" and task["actions"]:
+        match_kind = "MatchedAction"
+    task["planning"] = {"method": origin, "matched_rules": matched, "action_match": match_kind}
     return task
 
 
@@ -113,10 +135,17 @@ def applicability(memory, task):
     applies = memory.get("applies", {})
     wanted = applies.get("actions_any", [])
     reasons, uncertainties = [], []
-    if wanted and not set(wanted).intersection(task["actions"]):
-        return "inapplicable", ["Action does not match activation conditions"], []
     if wanted:
-        reasons.append("Action trigger: " + ", ".join(sorted(set(wanted) & set(task["actions"]))))
+        overlap = set(wanted) & set(task["actions"])
+        if not task["actions"]:
+            # UnknownParaphrase: do not auto-disqualify on empty task actions.
+            uncertainties.append(
+                "UnknownParaphrase: task actions unrecognized; memory activation not verified"
+            )
+        elif not overlap:
+            return "inapplicable", ["KnownIncompatible: action does not match activation conditions"], []
+        else:
+            reasons.append("Action trigger: " + ", ".join(sorted(overlap)))
     state = task["state"]
     for key, value in applies.get("state_equals", {}).items():
         if key not in state or state[key] is None:
@@ -403,7 +432,9 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
     assessment = assess(selected_ids)
     warnings = []
     if not task["actions"]:
-        warnings.append("No task action recognized. Supply actions/needs explicitly or enable a model planner.")
+        warnings.append(
+            "UnknownParaphrase: no task action recognized. Supply actions/needs explicitly or enable a model planner."
+        )
     if any(s["status"] != "evidence_present" for s in assessment):
         warnings.append("Resolve consequential evidence gaps before choosing an action.")
     warnings += [u for mid in selected_ids for u in checks[mid][2]]
