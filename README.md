@@ -167,9 +167,16 @@ Without `--text`, the response includes selection traces, need statuses and a `r
 Supply project state from inspected evidence. Do not infer “false” from a missing key.
 For arbitrary domains, provide your own `actions` and `needs`, or extend the catalog.
 
-**MCP:** initialize the desired store first. Adapt `examples/mcp-config.json` to your
-client's configuration format and substitute absolute paths. The launcher works
-without a client-specific working-directory setting.
+**MCP / Cursor agents:** `.cursor/mcp.json` starts the stdio server on
+`workspace/memory.sqlite3`. An empty database is seeded with the demo corpus on first
+launch; existing records are never replaced. Enable the `context-lab` MCP server in
+Cursor if prompted. Rule `.cursor/rules/context-lab-memory.mdc` and skill
+`.cursor/skills/context-lab-memory` tell agents when to recall, observe, propose, and
+give feedback.
+
+For other clients, copy `examples/mcp-config.json` and keep the `${workspaceFolder}`
+paths or substitute absolutes. The launcher works without a client-specific working
+directory.
 
 Exposed tools:
 

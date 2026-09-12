@@ -1,0 +1,30 @@
+---
+description: Use Context Lab MCP for project memory and recall before decisions that depend on prior evidence.
+alwaysApply: true
+---
+
+# Context Lab memory
+
+This repo is a memory lab. Prefer its MCP tools for recall and evidence, not inventing project history.
+
+## When to call tools
+
+Before a decision that depends on prior incidents, constraints, lessons, or project state:
+
+1. Call `memory_catalog` if you need the action/need vocabulary.
+2. Call `memory_context` with `query`, `project`, known `actions`, `needs`, and `state`.
+3. Read linked sources with `memory_source` when a condition or rationale matters.
+4. Treat unresolved needs and warnings as real gaps. Do not invent missing state.
+
+## Writing memory
+
+- New observation → `memory_observe` (evidence only).
+- Possible lesson → `memory_propose` (stays candidate until confirmed in the local UI).
+- After an outcome → `memory_feedback` with the `run_id` from `memory_context`.
+
+## Hard limits
+
+- Candidates never affect retrieval until confirmed.
+- Missing state is unknown, not false.
+- A prior agent suggestion is not a confirmed project change.
+- Default demo project is `fieldnote` after an empty DB is seeded.
