@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 
-KINDS = {"fact", "constraint", "decision", "event", "lesson"}
+KINDS = {"fact", "constraint", "decision", "event", "lesson", "standing_rule"}
 STATUSES = {"candidate", "confirmed", "retracted"}
 # Reserved project for sparse lab-wide standing rules that apply to every project.
 GLOBAL_PROJECT = "__global__"
@@ -80,6 +80,8 @@ def validate_memory(raw):
         raise ValueError("Lab-wide memories require confirm_global=true after explicit user approval")
     if m["kind"] not in KINDS:
         raise ValueError("Unknown memory kind")
+    if m["kind"] == "standing_rule" and m["ticket"]:
+        raise ValueError("standing_rule memories must be lab-wide or project baseline (empty ticket)")
     m.setdefault("status", "candidate")
     if m["status"] not in STATUSES:
         raise ValueError("Unknown memory status")
@@ -342,6 +344,93 @@ class Store:
             self.db.rollback()
             raise
         return output
+
+    def promote(self, memory_id, title=None, claim=None):
+        """Create a project-baseline candidate from a ticket memory with summary evidence.
+
+        Idempotent on (origin_memory_id, project, claim). Raw ticket sources stay isolated.
+        """
+        origin = self.memory(memory_id)
+        if not origin:
+            raise ValueError("Unknown memory_id")
+        if not origin.get("ticket"):
+            raise ValueError("promote requires a ticket-scoped memory")
+        if origin.get("status") != "confirmed":
+            raise ValueError("promote requires a confirmed memory")
+        claim_text = (claim if isinstance(claim, str) and claim.strip() else origin["claim"]).strip()
+        title_text = (title if isinstance(title, str) and title.strip() else origin["title"]).strip()
+        key = hashlib.sha256(
+            f"{origin['id']}|{origin['project']}|{claim_text}".encode("utf-8")
+        ).hexdigest()[:16]
+        summary_id = "src-promo-" + key
+        mem_id = "mem-promo-" + key
+        existing = self.memory(mem_id)
+        if existing:
+            return {
+                "memory": existing,
+                "summary_source": self.source(summary_id),
+                "provenance": {
+                    "origin_memory_id": origin["id"],
+                    "origin_ticket": origin["ticket"],
+                    "origin_project": origin["project"],
+                    "summary_source_id": summary_id,
+                },
+                "idempotent": True,
+            }
+        origin_refs = []
+        for sid in origin.get("source_ids", []):
+            src = self.source(sid)
+            if src:
+                origin_refs.append({"id": sid, "sha256": src["sha256"], "ticket": src.get("ticket", "")})
+        summary_body = (
+            "Promotion summary (opaque origin refs only; ticket bodies not copied).\n"
+            f"origin_memory_id: {origin['id']}\n"
+            f"origin_project: {origin['project']}\n"
+            f"origin_ticket: {origin['ticket']}\n"
+            f"origin_version: {origin['version']}\n"
+            f"origin_kind: {origin['kind']}\n"
+            f"origin_title: {origin['title']}\n"
+            f"promoted_claim: {claim_text}\n"
+            f"origin_source_refs: {json.dumps(origin_refs, sort_keys=True)}\n"
+        )
+        summary = self.add_source({
+            "id": summary_id,
+            "project": origin["project"],
+            "ticket": "",
+            "title": "Promotion summary of " + origin["id"],
+            "body": summary_body,
+        })
+        kind = origin["kind"] if origin["kind"] != "standing_rule" else "lesson"
+        candidate = {
+            "id": mem_id,
+            "project": origin["project"],
+            "ticket": "",
+            "kind": kind,
+            "status": "candidate",
+            "title": title_text,
+            "claim": claim_text,
+            "rationale": origin.get("rationale", "") or ("Promoted from ticket " + origin["ticket"]),
+            "expected_effect": origin.get("expected_effect", ""),
+            "source_ids": [summary_id],
+            "topics": list(origin.get("topics", [])),
+            "need_tags": list(origin.get("need_tags", [])),
+            "applies": dict(origin.get("applies", {})),
+            "unless": dict(origin.get("unless", {})),
+            "assumptions": dict(origin.get("assumptions", {})),
+            "assertions": dict(origin.get("assertions", {})),
+        }
+        saved = self.put_memories([candidate])[0]
+        return {
+            "memory": saved,
+            "summary_source": summary,
+            "provenance": {
+                "origin_memory_id": origin["id"],
+                "origin_ticket": origin["ticket"],
+                "origin_project": origin["project"],
+                "summary_source_id": summary_id,
+            },
+            "idempotent": False,
+        }
 
     def save_run(self, packet):
         packet = dict(packet, run_id=new_id("run"))

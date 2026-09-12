@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +15,8 @@ LAB_VAULT_PROJECT = "__lab__"
 
 
 def allocate_ticket():
-    return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    # Same-second callers need a unique suffix (Astra collision report).
+    return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
 
 
 def empty_kb_record(project, ticket=""):
@@ -193,8 +195,40 @@ CATEGORIES = {
 }
 
 
+def split_frontmatter(body):
+    """Parse simple YAML-ish frontmatter. Values stay strings; no nested objects."""
+    if not body.startswith("---\n") and not body.startswith("---\r\n"):
+        return {}, body
+    # Find closing fence on its own line.
+    match = re.search(r"\n---\s*\n", body[3:])
+    if not match:
+        return {}, body
+    raw = body[3:3 + match.start()]
+    rest = body[3 + match.end():]
+    props = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if not key:
+            continue
+        props[key] = value.strip().strip("\"'")
+    return props, rest
+
+
+def extract_links(text):
+    wiki = re.findall(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]", text)
+    md = [target for _, target in re.findall(r"\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)", text)]
+    return list(dict.fromkeys([*wiki, *md]))
+
+
 def sections(text):
-    heading, lines, fence = "Overview", [], None
+    """Yield (heading_path, heading, section_text). heading_path is ancestry including heading."""
+    stack = []  # (level, title)
+    lines, fence = [], None
+    path, heading = ["Overview"], "Overview"
     for line in text.splitlines(keepends=True):
         marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
         if marker:
@@ -203,14 +237,20 @@ def sections(text):
                 fence = token
             elif token[0] == fence[0] and len(token) >= len(fence):
                 fence = None
-        title = re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", line) if fence is None else None
+        title = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line) if fence is None else None
         if title:
             if "".join(lines).strip():
-                yield heading, "".join(lines)
-            heading, lines = title[1], []
+                yield path, heading, "".join(lines)
+            level = len(title[1])
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, title[2]))
+            path = [name for _, name in stack]
+            heading = title[2]
+            lines = []
         lines.append(line)
     if "".join(lines).strip():
-        yield heading, "".join(lines)
+        yield path, heading, "".join(lines)
 
 
 def chunks(text):
@@ -289,20 +329,27 @@ def initiate(store, project, ticket="", path=None, empty=False, refresh=False):
                     skipped["empty"] += 1
                     continue
                 relative = file.relative_to(root).as_posix()
+                properties, content = split_frontmatter(body)
                 digest = hashlib.sha256(body.encode()).hexdigest()
                 sid = "kb-src-" + hashlib.sha256(json.dumps([project, ticket, str(file), digest]).encode()).hexdigest()
                 sources.append((sid, project, relative, body, timestamp, digest, ticket))
-                for section_index, (heading, section) in enumerate(sections(body)):
+                for section_index, (heading_path, heading, section) in enumerate(sections(content)):
                     # ponytail: folder/heading keyword categories; add reviewed labels if these prove too coarse.
                     category = next((name for label in (heading.lower(), relative.lower())
                                      for name, pattern in CATEGORIES.items() if re.search(pattern, label)), "reference")
+                    outbound_links = extract_links(section)
                     for index, chunk in enumerate(chunks(section)):
                         mid = "kb-doc-" + hashlib.sha256(json.dumps([sid, section_index, index]).encode()).hexdigest()
-                        record["documents"].append({"id": mid, "version": 1, "project": project, "ticket": ticket,
+                        record["documents"].append({
+                            "id": mid, "version": 1, "project": project, "ticket": ticket,
                             "kind": "document", "status": "indexed", "title": relative + " · " + heading,
-                            "claim": chunk, "path": relative, "heading": heading, "category": category,
-                            "topics": [category, relative, heading], "source_ids": [sid], "need_tags": [],
-                            "valid_from": timestamp[:10], "recorded_at": timestamp})
+                            "claim": chunk, "path": relative, "heading": heading,
+                            "heading_path": heading_path, "outbound_links": outbound_links,
+                            "properties": properties, "category": category,
+                            "topics": [category, relative, heading, *heading_path[:3]],
+                            "source_ids": [sid], "need_tags": [],
+                            "valid_from": timestamp[:10], "recorded_at": timestamp,
+                        })
                         categories[category] += 1
                 if len(record["documents"]) > 20_000:
                     raise ValueError("Knowledge base exceeds 20,000 sections; choose a smaller folder")

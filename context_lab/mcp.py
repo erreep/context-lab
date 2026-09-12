@@ -40,10 +40,16 @@ TOOLS = [
     tool("memory_catalog", "List the supported task actions and information needs. Use these to describe your next decision.", {}, []),
     tool("memory_context",
          "Build task-targeted context from layered scopes: lab-wide (__global__), then project baseline (empty ticket), then the exact ticket. "
-         "Returns prose context plus selected/trace/conflicts by default. Pass detail='prose' for the compact six-key packet.",
+         "Default detail=agent returns a CompactView (prose, picks, needs, warnings) whose wire_estimated_tokens must fit budget. "
+         "Pass detail=inspect or full for selected/trace/conflicts (workbench). Prefer memory_inspect_run for a saved run.",
          {"task": TASK_SCHEMA, "budget": {"type": "integer", "minimum": 128, "maximum": 16000},
-          "detail": {"type": "string", "enum": ["full", "prose"]}},
+          "detail": {"type": "string", "enum": ["agent", "prose", "inspect", "full"]}},
          ["task"], False),
+    tool("memory_inspect_run",
+         "Load the full inspect projection (selected, trace, conflicts) for a prior memory_context run_id. "
+         "Use this instead of widening the default agent wire.",
+         {"run_id": {"type": "string"}},
+         ["run_id"]),
     tool("memory_source",
          "Read an immutable evidence source by ID. Allowed when the source is in the task scope or an ancestor layer (lab-wide / project baseline).",
          {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}},
@@ -65,6 +71,10 @@ TOOLS = [
          {"run_id": {"type": "string"}, "memory_id": {"type": "string"},
           "observation": {"type": "string", "enum": ["helpful", "missed", "irrelevant", "stale"]}, "note": {"type": "string"}},
          ["run_id", "memory_id", "observation"], False),
+    tool("memory_promote",
+         "Promote a confirmed ticket memory to a project-baseline candidate with a scoped summary source and opaque provenance. Raw ticket notes stay isolated. Idempotent on origin+claim.",
+         {"memory_id": {"type": "string"}, "title": {"type": "string"}, "claim": {"type": "string"}},
+         ["memory_id"], False),
 ]
 
 
@@ -76,7 +86,9 @@ def call(store, name, args):
     if name == "memory_catalog":
         return agent_api.list_catalog()
     if name == "memory_context":
-        return agent_api.context(store, args["task"], budget=args.get("budget", 1200), detail=args.get("detail", "full"))
+        return agent_api.context(store, args["task"], budget=args.get("budget", 1200), detail=args.get("detail", "agent"))
+    if name == "memory_inspect_run":
+        return agent_api.inspect_run(store, args["run_id"])
     if name == "memory_source":
         return agent_api.source(store, args["source_id"], args["project"], args.get("ticket", ""))
     if name == "memory_observe":
@@ -85,6 +97,8 @@ def call(store, name, args):
         return agent_api.propose(store, args["memories"])
     if name == "memory_feedback":
         return agent_api.feedback(store, args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
+    if name == "memory_promote":
+        return agent_api.promote(store, args["memory_id"], title=args.get("title"), claim=args.get("claim"))
     raise AgentError("unknown_tool", f"Unknown tool: {name}")
 
 

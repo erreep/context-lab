@@ -1,4 +1,5 @@
 """Agent-first surface: KnowledgeChoice, full context packet, propose schema."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,17 +33,29 @@ class AgentFirstTests(unittest.TestCase):
         self.assertEqual(initiate(self.store, "app", "T-2")["status"], "needs_knowledge_base")
 
     @patch("context_lab.knowledge.discover_obsidian_vaults", return_value=[])
-    def test_context_full_includes_trace(self, _):
+    def test_context_default_is_compact(self, _):
         initiate(self.store, "app", "T-1", knowledge={"mode": "empty", "vault": "none"})
         src = self.store.add_source({"project": "app", "ticket": "T-1", "title": "t", "body": "Brand colors are blue"})
         self.store.put_memories([{
             "id": "C-1", "project": "app", "ticket": "T-1", "kind": "constraint", "status": "confirmed",
             "title": "Brand", "claim": "Brand colors are blue", "source_ids": [src["id"]],
         }])
-        full = context(self.store, {"project": "app", "ticket": "T-1", "query": "Change button color"})
-        self.assertIn("selected", full)
-        self.assertIn("trace", full)
-        self.assertIn("conflicts", full)
+        # Seed an excluded candidate so inspect can see it; agent wire must not.
+        self.store.put_memories([{
+            "id": "C-cand", "project": "app", "ticket": "T-1", "kind": "lesson", "status": "candidate",
+            "title": "Secret candidate title", "claim": "Should not leak", "source_ids": [src["id"]],
+        }])
+        compact = context(self.store, {"project": "app", "ticket": "T-1", "query": "Change button color"})
+        self.assertNotIn("selected", compact)
+        self.assertNotIn("trace", compact)
+        self.assertIn("picks", compact)
+        self.assertIn("wire_estimated_tokens", compact)
+        self.assertLessEqual(compact["wire_estimated_tokens"], 1200)
+        self.assertNotIn("Secret candidate title", json.dumps(compact))
+        inspect = context(self.store, {"project": "app", "ticket": "T-1", "query": "Change button color"}, detail="inspect")
+        self.assertIn("selected", inspect)
+        self.assertIn("trace", inspect)
+        self.assertIn("Secret candidate title", json.dumps(inspect))
         prose = context(self.store, {"project": "app", "ticket": "T-1", "query": "Change button color"}, detail="prose")
         self.assertNotIn("selected", prose)
         self.assertIn("context", prose)
