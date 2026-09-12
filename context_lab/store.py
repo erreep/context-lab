@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 
-KINDS = {"fact", "constraint", "decision", "event", "lesson"}
+KINDS = {"fact", "constraint", "decision", "event", "lesson", "standing_rule"}
 STATUSES = {"candidate", "confirmed", "retracted"}
 # Reserved project for sparse lab-wide standing rules that apply to every project.
 GLOBAL_PROJECT = "__global__"
@@ -80,6 +80,8 @@ def validate_memory(raw):
         raise ValueError("Lab-wide memories require confirm_global=true after explicit user approval")
     if m["kind"] not in KINDS:
         raise ValueError("Unknown memory kind")
+    if m["kind"] == "standing_rule" and m["ticket"]:
+        raise ValueError("standing_rule memories must be lab-wide or project baseline (empty ticket)")
     m.setdefault("status", "candidate")
     if m["status"] not in STATUSES:
         raise ValueError("Unknown memory status")

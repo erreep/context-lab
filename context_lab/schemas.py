@@ -15,9 +15,12 @@ Setup is not recall. Candidates never affect retrieval until confirmed in the lo
 Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
 """
 
-KINDS = ["fact", "constraint", "decision", "event", "lesson"]
+KINDS = ["fact", "constraint", "decision", "event", "lesson", "standing_rule"]
 # agent/prose = CompactView (default MCP). inspect/full = TraceView keys for workbench.
 DETAIL_LEVELS = frozenset({"agent", "prose", "inspect", "full"})
+STANDING_RESERVE_RATIO = 0.25
+STANDING_MAX_TOKENS = 500
+STANDING_MIN_TOKENS = 300
 
 TASK_SCHEMA = {
     "type": "object",
