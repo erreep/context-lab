@@ -29,20 +29,23 @@ class JournalTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_journal_write_index_idempotent_and_retrievable(self):
-        frozen = datetime(2026, 9, 12, 15, 30, 0, tzinfo=timezone.utc)
+        first_at = datetime(2026, 9, 12, 15, 30, 0, tzinfo=timezone.utc)
+        retry_at = datetime(2026, 9, 12, 15, 30, 7, tzinfo=timezone.utc)
         words = "We chose cobalt-only pigment for AlphaWidget shipping."
         with patch("context_lab.agent_api.datetime") as dt:
-            dt.now.return_value = frozen
+            dt.now.side_effect = [first_at, retry_at]
             first = journal(
                 self.store, "app", "T-1", "decision",
                 "Alpha pigment decision", words,
             )
+            # A retry seconds later must find the earlier file, not write a second one.
             second = journal(
                 self.store, "app", "T-1", "decision",
                 "Alpha pigment decision", words,
             )
         self.assertTrue(Path(first["path"]).is_file())
         self.assertEqual(first["path"], second["path"])
+        self.assertEqual(len(list((self.notes / "journal").glob("*.md"))), 1)
         self.assertEqual(first["index"]["status"], "indexed")
         self.assertEqual(second["index"]["status"], "already_indexed")
         sources = [s for s in self.store.sources("app", "T-1") if "journal/" in s["title"]]

@@ -17,10 +17,10 @@ def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
-def _run_hook(cwd, command, payload, env=None):
+def _run_hook(cwd, command, payload, env=None, argv=()):
     merged = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), **(env or {})}
     return subprocess.run(
-        [sys.executable, "-m", "context_lab", "hook", command],
+        [sys.executable, "-m", "context_lab", "hook", command, *argv],
         cwd=cwd,
         input=json.dumps(payload),
         capture_output=True,
@@ -96,6 +96,35 @@ class HookTests(unittest.TestCase):
         blob2 = json.dumps(ctx2)
         self.assertIn("Alpha", blob1)
         self.assertIn("Beta", blob2)
+
+    def test_session_start_injects_gate_text_and_view(self):
+        result = _run_hook(self.repo, "session-start", {"session_id": "s1", "cwd": str(self.repo)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "SessionStart")
+        self.assertIn("Context Lab hard gates", out["additionalContext"])
+        self.assertIn("run_id", out["additionalContext"])
+
+    def test_gate_adapter_reads_command_and_cwd_from_payload(self):
+        # Run from a directory that is not a repo: only the payload can supply cwd and command.
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        passthrough = _run_hook(elsewhere, "gate-git", {
+            "cwd": str(self.repo), "tool_input": {"command": "ls -la"},
+        }, argv=["commit", "--adapter", "claude"])
+        self.assertEqual(passthrough.returncode, 0, passthrough.stderr)
+        self.assertEqual(passthrough.stdout.strip(), "")
+        denied = _run_hook(elsewhere, "gate-git", {
+            "cwd": str(self.repo), "tool_input": {"command": "git -C . commit -m x"},
+        }, argv=["commit", "--adapter", "claude"])
+        self.assertEqual(denied.returncode, 0, denied.stderr)
+        out = json.loads(denied.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("missing lease", out["permissionDecisionReason"])
+        cursor = _run_hook(elsewhere, "gate-git", {
+            "workspace_roots": [str(self.repo)], "command": "git commit -m x",
+        }, argv=["commit", "--adapter", "cursor"])
+        self.assertEqual(json.loads(cursor.stdout)["permission"], "deny")
 
     def test_missing_scope_silent_stdout(self):
         other = self.root / "other"

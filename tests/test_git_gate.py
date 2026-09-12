@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -93,6 +94,33 @@ class GitGateTests(unittest.TestCase):
         with self.assertRaises(Exception):
             _recall(str(self.repo), budget=1)
         self.assertFalse(path.exists())
+
+    def test_lease_survives_subdirectory_cwd(self):
+        sub = self.repo / "sub"
+        sub.mkdir()
+        self.assertEqual(_recall(str(sub)), 0)
+        self.assertEqual(gate_git(cwd=str(self.repo)), 0)
+        self.assertEqual(gate_git(cwd=str(sub)), 0)
+
+    def test_installed_hook_gates_real_git_commit(self):
+        self.assertEqual(install_git(cwd=str(self.repo)), 0)
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(self.repo, "add", "b.txt")
+        blocked = subprocess.run(["git", "commit", "-m", "no lease"], cwd=self.repo,
+                                 capture_output=True, text=True, env=env)
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("missing lease", blocked.stderr)
+        self.assertEqual(_recall(str(self.repo)), 0)
+        allowed = subprocess.run(["git", "commit", "-m", "leased"], cwd=self.repo,
+                                 capture_output=True, text=True, env=env)
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+    def test_install_git_refuses_when_hooks_path_set(self):
+        _git(self.repo, "config", "core.hooksPath", ".githooks")
+        self.assertEqual(install_git(cwd=str(self.repo)), 1)
+        hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())
+        self.assertFalse((self.repo / hooks / "pre-commit").exists())
 
     def test_install_git_leaves_existing_pre_commit(self):
         hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())

@@ -1,6 +1,7 @@
 """Deep agent surface: initiate modes, lab vault binding, context shaping, propose hints."""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import tempfile
@@ -207,9 +208,14 @@ def journal(store, project, ticket, kind, title, body):
     created = datetime.now(timezone.utc)
     stamp = created.strftime("%Y%m%dT%H%M%SZ")
     slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:48] or "entry"
+    # Content digest in the name makes a retry find its earlier file instead of writing a second one.
+    digest = hashlib.sha256(f"{kind}\n{title.strip()}\n{body.strip()}".encode()).hexdigest()[:8]
     journal_dir = root / "journal"
     journal_dir.mkdir(parents=True, exist_ok=True)
-    dest = journal_dir / f"{kind}-{stamp}-{slug}.md"
+    dest = next(iter(sorted(journal_dir.glob(f"{kind}-*-{slug}-{digest}.md"))),
+                journal_dir / f"{kind}-{stamp}-{slug}-{digest}.md")
+    if dest.exists():
+        return _journal_result(store, project, ticket, root, dest, kind)
     front = (
         f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
         f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n---\n\n"
@@ -228,6 +234,10 @@ def journal(store, project, ticket, kind, title, body):
         except OSError:
             pass
         raise
+    return _journal_result(store, project, ticket, root, dest, kind)
+
+
+def _journal_result(store, project, ticket, root, dest, kind):
     indexed = knowledge_mod.index_ticket_file(store, project, ticket, dest)
     return {
         "path": str(dest),

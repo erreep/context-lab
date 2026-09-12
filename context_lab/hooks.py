@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,9 @@ INJECT_BUDGET = 400
 LEASE_TTL_MINUTES = 10
 SCOPE_HINT = "Run: python3 -m context_lab hook set-scope --project P --ticket T"
 RECALL_HINT = "Run: python3 -m context_lab hook recall-for --purpose commit"
+# Advisory only: the pre-commit hook is the enforcement point. Handles `git -C x commit`, `git -c k=v commit`.
+GIT_COMMIT_RE = re.compile(r"\bgit\s+(?:-{1,2}\S+(?:\s+[^-\s]\S*)?\s+)*commit\b")
+UNBORN_HEAD = "unborn"
 PRE_COMMIT_SCRIPT = """#!/bin/sh
 # Context Lab recall lease gate. Must run before formatters that rewrite the index.
 # lint-staged style rewrites need a fresh lease after they re-stage files.
@@ -170,8 +174,9 @@ def session_start(payload=None):
 
 def _git_state(cwd=None):
     head = _git(["rev-parse", "HEAD"], cwd=cwd, check=False)
-    head_oid = head.stdout.strip() if head.returncode == 0 else "4b825dc642cb6eb9a060e54bf8d6927bfbfd61"
-    git_dir = _git(["rev-parse", "--git-dir"], cwd=cwd).stdout.strip()
+    head_oid = head.stdout.strip() if head.returncode == 0 else UNBORN_HEAD
+    # Absolute: --git-dir is relative to cwd, so recall from root and gate from a subdir would mismatch.
+    git_dir = _git(["rev-parse", "--absolute-git-dir"], cwd=cwd).stdout.strip()
     index_tree = _git(["write-tree"], cwd=cwd).stdout.strip()
     return head_oid, git_dir, index_tree
 
@@ -231,10 +236,26 @@ def _deny_out(adapter, reason):
     return 1
 
 
-def gate_git(purpose="commit", cwd=None, adapter="git"):
+def _gate_payload(adapter, payload=None):
+    """Return (command, cwd) from the harness payload. Only the git adapter runs without stdin."""
+    if adapter == "git":
+        return None, None
+    payload = payload if payload is not None else _read_hook_stdin()
+    if adapter == "claude":
+        tool_input = payload.get("tool_input") or {}
+        return tool_input.get("command"), payload.get("cwd")
+    roots = payload.get("workspace_roots") or []
+    return payload.get("command"), payload.get("cwd") or (roots[0] if roots else None)
+
+
+def gate_git(purpose="commit", cwd=None, adapter="git", payload=None):
     if purpose != "commit":
         return _deny_out(adapter, f"unsupported purpose {purpose}; {RECALL_HINT}")
-    cwd = cwd or os.getcwd()
+    command, payload_cwd = _gate_payload(adapter, payload)
+    # Never trust the harness matcher alone: it fired on non-commit commands. Pass those through silently.
+    if isinstance(command, str) and not GIT_COMMIT_RE.search(command):
+        return 0
+    cwd = cwd or payload_cwd or os.getcwd()
     try:
         require_worktree(cwd)
         scope = load_scope(cwd=cwd)
@@ -300,6 +321,7 @@ def install_git(cwd=None):
             file=sys.stderr,
         )
         return 1
+    # ponytail: `python3 -m context_lab` only imports when the worktree root is this repo; packaging lifts that.
     target.write_text(PRE_COMMIT_SCRIPT, encoding="utf-8")
     target.chmod(0o755)
     try:
