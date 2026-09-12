@@ -15,7 +15,7 @@ from .engine import ROOT
 from .schemas import GATE_TEXT, AgentError, wire_dumps
 from .store import Store
 
-INJECT_BUDGET = 400
+INJECT_BUDGET = 800  # header ~175 wire tokens; one journal pick ~270. 400 dropped every pick.
 LEASE_TTL_MINUTES = 10
 SCOPE_HINT = "Run: context-lab hook set-scope --project P --ticket T"
 RECALL_HINT = "Run: context-lab hook recall-for --purpose commit"

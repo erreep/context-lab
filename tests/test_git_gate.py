@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -121,10 +122,16 @@ class GitGateTests(unittest.TestCase):
     def test_installed_hook_names_the_fix_when_not_installed(self):
         with patch("context_lab.hooks.CONTEXT_LAB_HOME", str(self.root / "nowhere")):
             self.assertEqual(install_git(cwd=str(self.repo)), 0)
-        # PATH holds only git and python, so `context-lab` cannot be found either.
-        path = os.pathsep.join(sorted({os.path.dirname(shutil.which(x)) for x in ("git", "python3")}))
+        # A bin dir with only git and a python3 that skips site-packages (-S), so neither the
+        # console script nor an editable install of context_lab is reachable.
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        os.symlink(shutil.which("git"), bin_dir / "git")
+        wrapper = bin_dir / "python3"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" -S "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PATH")}
-        env["PATH"] = path
+        env["PATH"] = str(bin_dir)
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
         _git(self.repo, "add", "b.txt")
         blocked = subprocess.run(["git", "commit", "-m", "x"], cwd=self.repo,
