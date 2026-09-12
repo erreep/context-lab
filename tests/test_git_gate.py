@@ -1,8 +1,8 @@
 """Commit recall lease and git gate."""
+import contextlib
+import io
 import json
-import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -26,12 +26,9 @@ def _git(cwd, *args, check=True):
     )
 
 
-def _run(cwd, *args, check=False):
-    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
-    return subprocess.run(
-        [sys.executable, "-m", "context_lab", *args],
-        cwd=cwd, capture_output=True, text=True, env=env, check=check,
-    )
+def _recall(cwd, **kwargs):
+    with contextlib.redirect_stdout(io.StringIO()):
+        return recall_for(cwd=cwd, **kwargs)
 
 
 class GitGateTests(unittest.TestCase):
@@ -60,20 +57,20 @@ class GitGateTests(unittest.TestCase):
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
     def test_valid_lease_allows_and_mutations_block(self):
-        self.assertEqual(recall_for(cwd=str(self.repo)), 0)
+        self.assertEqual(_recall(str(self.repo)), 0)
         self.assertEqual(gate_git(cwd=str(self.repo)), 0)
 
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
         _git(self.repo, "add", "b.txt")
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
-        self.assertEqual(recall_for(cwd=str(self.repo)), 0)
+        self.assertEqual(_recall(str(self.repo)), 0)
         self.assertEqual(gate_git(cwd=str(self.repo)), 0)
         _git(self.repo, "commit", "-m", "add b")
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
     def test_expired_lease_blocks(self):
-        self.assertEqual(recall_for(cwd=str(self.repo)), 0)
+        self.assertEqual(_recall(str(self.repo)), 0)
         path = lease_path(cwd=str(self.repo))
         lease = json.loads(path.read_text(encoding="utf-8"))
         past = (datetime.now(timezone.utc) - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -82,7 +79,7 @@ class GitGateTests(unittest.TestCase):
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
     def test_absent_run_id_blocks(self):
-        self.assertEqual(recall_for(cwd=str(self.repo)), 0)
+        self.assertEqual(_recall(str(self.repo)), 0)
         path = lease_path(cwd=str(self.repo))
         lease = json.loads(path.read_text(encoding="utf-8"))
         lease["run_id"] = "run-does-not-exist"
@@ -94,7 +91,7 @@ class GitGateTests(unittest.TestCase):
         if path.exists():
             path.unlink()
         with self.assertRaises(Exception):
-            recall_for(cwd=str(self.repo), budget=1)
+            _recall(str(self.repo), budget=1)
         self.assertFalse(path.exists())
 
     def test_install_git_leaves_existing_pre_commit(self):
@@ -118,8 +115,8 @@ class GitGateTests(unittest.TestCase):
             with patch("context_lab.knowledge.discover_obsidian_vaults", return_value=[]):
                 initiate(store2, "app", "T-2", knowledge={"mode": "empty", "vault": "none"})
             set_scope("app", "T-2", db=db2, cwd=str(wt))
-            self.assertEqual(recall_for(cwd=str(self.repo)), 0)
-            self.assertEqual(recall_for(cwd=str(wt)), 0)
+            self.assertEqual(_recall(str(self.repo)), 0)
+            self.assertEqual(_recall(str(wt)), 0)
             lease_a = json.loads(lease_path(cwd=str(self.repo)).read_text(encoding="utf-8"))
             lease_b = json.loads(lease_path(cwd=str(wt)).read_text(encoding="utf-8"))
             self.assertEqual(lease_a["ticket"], "T-1")
