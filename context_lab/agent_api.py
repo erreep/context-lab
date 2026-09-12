@@ -1,6 +1,12 @@
 """Deep agent surface: initiate modes, lab vault binding, context shaping, propose hints."""
 from __future__ import annotations
 
+import os
+import re
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context, plan_task
 from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
@@ -173,6 +179,64 @@ def feedback(store, run_id, memory_id, observation, note=""):
 
 def promote(store, memory_id, title=None, claim=None):
     return store.promote(memory_id, title=title, claim=claim)
+
+
+JOURNAL_KINDS = frozenset({"plan", "decision", "progress", "handoff"})
+
+
+def journal(store, project, ticket, kind, title, body):
+    """Write evidence into the bound ticket folder and index it immediately."""
+    project, ticket = scope_key({"project": project, "ticket": ticket})
+    if kind not in JOURNAL_KINDS:
+        raise AgentError("validation", "kind must be plan|decision|progress|handoff", field="kind")
+    if not isinstance(title, str) or not title.strip():
+        raise AgentError("validation", "title required", field="title")
+    if not isinstance(body, str) or not body.strip():
+        raise AgentError("validation", "body required", field="body")
+    if not ticket:
+        raise AgentError("no_ticket_folder", "journal requires a ticket with a bound notes folder", field="ticket")
+    kb = store.knowledge_base(project, ticket)
+    if not kb or not isinstance(kb.get("path"), str) or not kb["path"].strip():
+        raise AgentError(
+            "no_ticket_folder",
+            "Ticket has no bound Obsidian/notes folder",
+            field="ticket",
+            hint="Initiate with knowledge.mode import and a path, or bind a folder first",
+        )
+    root = Path(kb["path"]).expanduser().resolve(strict=True)
+    created = datetime.now(timezone.utc)
+    stamp = created.strftime("%Y%m%dT%H%M%SZ")
+    slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:48] or "entry"
+    journal_dir = root / "journal"
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    dest = journal_dir / f"{kind}-{stamp}-{slug}.md"
+    front = (
+        f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
+        f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n---\n\n"
+        f"# {title.strip()}\n\n{body.strip()}\n"
+    )
+    fd, tmp = tempfile.mkstemp(prefix=".journal-", suffix=".md", dir=str(journal_dir))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(front)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    indexed = knowledge_mod.index_ticket_file(store, project, ticket, dest)
+    return {
+        "path": str(dest),
+        "relative_path": dest.relative_to(root).as_posix(),
+        "kind": kind,
+        "project": project,
+        "ticket": ticket,
+        "index": indexed,
+    }
 
 
 def allocate_ticket():

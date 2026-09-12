@@ -109,7 +109,8 @@ def obsidian_info(binding, auto_detected=False):
         return {
             "journaling": "available",
             "reason": reason,
-            "hint": "Session journals (opt-in) write under {vault}/Cl/{datetime}/. Importer skips Cl/.",
+            "hint": "Durable ticket notes use memory_journal into the bound ticket folder "
+                    "(journal/<kind>-…). Cl/ is ephemeral session traces only; the importer skips Cl/.",
             "auto_detected": auto_detected,
         }
     if binding["state"] == "declined":
@@ -270,6 +271,78 @@ def summary(record, status):
     return dict({k: v for k, v in record.items() if k != "documents"}, status=status)
 
 
+def note_source_and_docs(project, ticket, root, file, body, timestamp):
+    """Build one importer source row and document chunks for a note body."""
+    relative = file.relative_to(root).as_posix()
+    properties, content = split_frontmatter(body)
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    sid = "kb-src-" + hashlib.sha256(json.dumps([project, ticket, str(file), digest]).encode()).hexdigest()
+    source = (sid, project, relative, body, timestamp, digest, ticket)
+    documents = []
+    categories = Counter()
+    for section_index, (heading_path, heading, section) in enumerate(sections(content)):
+        # ponytail: folder/heading keyword categories; add reviewed labels if these prove too coarse.
+        category = next((name for label in (heading.lower(), relative.lower())
+                         for name, pattern in CATEGORIES.items() if re.search(pattern, label)), "reference")
+        outbound_links = extract_links(section)
+        for index, chunk in enumerate(chunks(section)):
+            mid = "kb-doc-" + hashlib.sha256(json.dumps([sid, section_index, index]).encode()).hexdigest()
+            documents.append({
+                "id": mid, "version": 1, "project": project, "ticket": ticket,
+                "kind": "document", "status": "indexed", "title": relative + " · " + heading,
+                "claim": chunk, "path": relative, "heading": heading,
+                "heading_path": heading_path, "outbound_links": outbound_links,
+                "properties": properties, "category": category,
+                "topics": [category, relative, heading, *heading_path[:3]],
+                "source_ids": [sid], "need_tags": [],
+                "valid_from": timestamp[:10], "recorded_at": timestamp,
+            })
+            categories[category] += 1
+    return source, documents, categories
+
+
+def index_ticket_file(store, project, ticket, file_path):
+    """Index one file under a bound ticket folder. Idempotent via content-addressed source id."""
+    project, ticket = scope_key({"project": project, "ticket": ticket})
+    kb = store.knowledge_base(project, ticket)
+    if not kb or not isinstance(kb.get("path"), str) or not kb["path"].strip():
+        raise ValueError("Ticket has no bound notes folder")
+    root = Path(kb["path"]).expanduser().resolve(strict=True)
+    file = Path(file_path).expanduser().resolve(strict=True)
+    file.relative_to(root)
+    body = file.read_text(encoding="utf-8-sig")
+    if not body.strip():
+        raise ValueError("Note is empty")
+    timestamp = now()
+    source, documents, categories = note_source_and_docs(project, ticket, root, file, body, timestamp)
+    sid = source[0]
+    if store.source(sid):
+        return {"status": "already_indexed", "source_id": sid, "path": source[2]}
+    record = dict(kb)
+    docs = list(record.get("documents") or [])
+    existing = {d["id"] for d in docs}
+    for doc in documents:
+        if doc["id"] not in existing:
+            docs.append(doc)
+    cats = Counter(record.get("categories") or {})
+    cats.update(categories)
+    record["documents"] = docs
+    record["categories"] = dict(cats)
+    record["note_count"] = int(record.get("note_count") or 0) + 1
+    record["chunk_count"] = len(docs)
+    record["indexed_at"] = timestamp
+    if len(docs) > 20_000:
+        raise ValueError("Knowledge base exceeds 20,000 sections; choose a smaller folder")
+    with store.db:
+        store.db.execute(
+            "INSERT OR IGNORE INTO sources (id,project,title,body,created_at,sha256,ticket) VALUES (?,?,?,?,?,?,?)",
+            source)
+        store.db.execute(
+            "INSERT INTO knowledge_bases VALUES (?,?,?) ON CONFLICT(project,ticket) DO UPDATE SET payload=excluded.payload",
+            (project, ticket, json.dumps(record)))
+    return {"status": "indexed", "source_id": sid, "path": source[2], "chunks": len(documents)}
+
+
 def initiate(store, project, ticket="", path=None, empty=False, refresh=False):
     project, ticket = scope_key({"project": project, "ticket": ticket})
     if not isinstance(empty, bool) or not isinstance(refresh, bool):
@@ -328,29 +401,11 @@ def initiate(store, project, ticket="", path=None, empty=False, refresh=False):
                 if not body.strip():
                     skipped["empty"] += 1
                     continue
-                relative = file.relative_to(root).as_posix()
-                properties, content = split_frontmatter(body)
-                digest = hashlib.sha256(body.encode()).hexdigest()
-                sid = "kb-src-" + hashlib.sha256(json.dumps([project, ticket, str(file), digest]).encode()).hexdigest()
-                sources.append((sid, project, relative, body, timestamp, digest, ticket))
-                for section_index, (heading_path, heading, section) in enumerate(sections(content)):
-                    # ponytail: folder/heading keyword categories; add reviewed labels if these prove too coarse.
-                    category = next((name for label in (heading.lower(), relative.lower())
-                                     for name, pattern in CATEGORIES.items() if re.search(pattern, label)), "reference")
-                    outbound_links = extract_links(section)
-                    for index, chunk in enumerate(chunks(section)):
-                        mid = "kb-doc-" + hashlib.sha256(json.dumps([sid, section_index, index]).encode()).hexdigest()
-                        record["documents"].append({
-                            "id": mid, "version": 1, "project": project, "ticket": ticket,
-                            "kind": "document", "status": "indexed", "title": relative + " · " + heading,
-                            "claim": chunk, "path": relative, "heading": heading,
-                            "heading_path": heading_path, "outbound_links": outbound_links,
-                            "properties": properties, "category": category,
-                            "topics": [category, relative, heading, *heading_path[:3]],
-                            "source_ids": [sid], "need_tags": [],
-                            "valid_from": timestamp[:10], "recorded_at": timestamp,
-                        })
-                        categories[category] += 1
+                source, documents, cats = note_source_and_docs(
+                    project, ticket, root, file, body, timestamp)
+                sources.append(source)
+                record["documents"].extend(documents)
+                categories.update(cats)
                 if len(record["documents"]) > 20_000:
                     raise ValueError("Knowledge base exceeds 20,000 sections; choose a smaller folder")
         if not sources:

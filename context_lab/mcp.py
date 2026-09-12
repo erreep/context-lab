@@ -76,6 +76,13 @@ TOOLS = [
          "Promote a confirmed ticket memory to a project-baseline candidate with a scoped summary source and opaque provenance. Raw ticket notes stay isolated. Idempotent on origin+claim.",
          {"memory_id": {"type": "string"}, "title": {"type": "string"}, "claim": {"type": "string"}},
          ["memory_id"], False),
+    tool("memory_journal",
+         "Write durable evidence into the bound ticket folder under journal/<kind>-… and index it immediately as reference text. "
+         "Kinds: plan|decision|progress|handoff. Does not create confirmed lessons. Cl/ remains ephemeral and is skipped by the importer.",
+         {"project": {"type": "string"}, "ticket": {"type": "string"},
+          "kind": {"type": "string", "enum": ["plan", "decision", "progress", "handoff"]},
+          "title": {"type": "string"}, "body": {"type": "string"}},
+         ["project", "ticket", "kind", "title", "body"], False),
 ]
 
 
@@ -100,6 +107,9 @@ def call(store, name, args):
         return agent_api.feedback(store, args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
     if name == "memory_promote":
         return agent_api.promote(store, args["memory_id"], title=args.get("title"), claim=args.get("claim"))
+    if name == "memory_journal":
+        return agent_api.journal(
+            store, args["project"], args["ticket"], args["kind"], args["title"], args["body"])
     raise AgentError("unknown_tool", f"Unknown tool: {name}")
 
 

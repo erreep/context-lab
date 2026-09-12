@@ -45,6 +45,12 @@ def main():
     draft.add_argument("--source", required=True)
     sub.add_parser("mcp", help="Start the stdio MCP server")
     sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
+    journal_p = sub.add_parser("journal", help="Write durable ticket journal evidence and index it")
+    journal_p.add_argument("--project", required=True)
+    journal_p.add_argument("--ticket", required=True)
+    journal_p.add_argument("--kind", required=True, choices=["plan", "decision", "progress", "handoff"])
+    journal_p.add_argument("--title", required=True)
+    journal_p.add_argument("--body", required=True)
     from .hooks import build_parser as build_hook_parser, dispatch as dispatch_hook
     build_hook_parser(sub)
     args = parser.parse_args()
@@ -87,6 +93,9 @@ def main():
         elif args.command == "allocate-ticket":
             from .knowledge import allocate_ticket
             print(json.dumps({"ticket": allocate_ticket()}, indent=2))
+        elif args.command == "journal":
+            from .agent_api import journal
+            print(json.dumps(journal(store, args.project, args.ticket, args.kind, args.title, args.body), indent=2))
         elif args.command == "import":
             data = json.loads(Path(args.file).read_text())
             if data.get("knowledge_bases"):
