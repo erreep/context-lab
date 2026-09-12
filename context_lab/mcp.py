@@ -14,6 +14,7 @@ from .schemas import (
     TASK_SCHEMA,
     AgentError,
     error_payload,
+    wire_dumps,
 )
 
 
@@ -145,9 +146,9 @@ def serve_mcp(store, instream=None, outstream=None):
                     if not isinstance(args, dict):
                         raise ValueError("arguments must be an object")
                     data = call(store, params["name"], args)
-                    result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}
+                    result = {"content": [{"type": "text", "text": wire_dumps(data)}], "isError": False}
                 except (AgentError, ValueError, TypeError, KeyError, OSError) as e:
-                    result = {"content": [{"type": "text", "text": json.dumps(error_payload(e))}], "isError": True}
+                    result = {"content": [{"type": "text", "text": wire_dumps(error_payload(e))}], "isError": True}
             else:
                 response = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}
                 outstream.write(json.dumps(response) + "\n")

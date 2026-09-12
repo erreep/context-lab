@@ -401,6 +401,22 @@ class Store:
             "body": summary_body,
         })
         kind = origin["kind"] if origin["kind"] != "standing_rule" else "lesson"
+        # Resolve depends_on into project/lab scope only; ticket deps must be promoted first.
+        resolved_deps = []
+        for dep_id in origin.get("depends_on", []):
+            dep = self.memory(dep_id)
+            if not dep:
+                raise ValueError(f"promote cannot resolve depends_on {dep_id}: missing")
+            if dep.get("status") == "retracted":
+                raise ValueError(f"promote cannot resolve depends_on {dep_id}: retracted")
+            if dep.get("ticket"):
+                raise ValueError(
+                    f"promote cannot keep ticket-scoped depends_on {dep_id}; "
+                    "promote that dependency first or clear it"
+                )
+            if dep.get("project") not in {origin["project"], GLOBAL_PROJECT}:
+                raise ValueError(f"promote cannot resolve depends_on {dep_id}: cross-project")
+            resolved_deps.append(dep_id)
         candidate = {
             "id": mem_id,
             "project": origin["project"],
@@ -414,11 +430,16 @@ class Store:
             "source_ids": [summary_id],
             "topics": list(origin.get("topics", [])),
             "need_tags": list(origin.get("need_tags", [])),
+            "depends_on": resolved_deps,
             "applies": dict(origin.get("applies", {})),
             "unless": dict(origin.get("unless", {})),
             "assumptions": dict(origin.get("assumptions", {})),
             "assertions": dict(origin.get("assertions", {})),
         }
+        if origin.get("valid_from"):
+            candidate["valid_from"] = origin["valid_from"]
+        if origin.get("valid_until"):
+            candidate["valid_until"] = origin["valid_until"]
         saved = self.put_memories([candidate])[0]
         return {
             "memory": saved,

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context
-from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context
+from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
 from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
 
@@ -90,13 +90,19 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
 def context(store, task, budget=1200, detail="agent"):
     if detail not in DETAIL_LEVELS:
         raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
-    # Leave headroom so picks/needs/wire fields on CompactView still fit the caller budget.
     compact = detail in {"agent", "prose"}
-    select_budget = max(128, budget - 120) if compact else budget
+    select_budget = budget
     flags = provider_flags(store)
-    packet = compile_context(store, task, budget=select_budget, **flags)
-    view = format_context(packet, detail)
-    if compact and view["wire_estimated_tokens"] > budget:
+    view, wire_text = None, ""
+    for _ in range(12):
+        packet = compile_context(store, task, budget=select_budget, **flags)
+        view, wire_text = format_context(packet, detail)
+        if not compact or wire_estimated_tokens(wire_text) <= budget:
+            break
+        if select_budget <= 128:
+            break
+        select_budget = max(128, int(select_budget * 0.85))
+    if compact and wire_estimated_tokens(wire_text) > budget:
         raise AgentError(
             "wire_budget_exceeded",
             "Compact response exceeds budget; shorten the task or raise budget",
@@ -110,7 +116,8 @@ def inspect_run(store, run_id):
     packet = store.run(run_id)
     if not packet:
         raise AgentError("not_found", "Unknown run_id", field="run_id")
-    return format_context(packet, detail="inspect")
+    view, _ = format_context(packet, detail="inspect")
+    return view
 
 
 def propose(store, memories):
