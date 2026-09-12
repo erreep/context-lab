@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from .engine import ROOT, STRATEGIES, compile_context
+from .engine import ROOT, STRATEGIES
 from .evaluate import evaluate, markdown_report
 from .provider import ModelEndpoint
 from .store import Store
@@ -95,14 +95,15 @@ def main():
             if not source:
                 raise ValueError("Unknown source_id")
             print(json.dumps(ModelEndpoint(store).draft(source), indent=2))
+        elif args.command == "context":
+            from .agent_api import context as build_context
+            task = json.loads(Path(args.task).read_text())
+            view = build_context(store, task, budget=args.budget)
+            print(view["context"] if args.text else json.dumps(view, indent=2))
         else:
             adapter = ModelEndpoint(store) if args.embeddings or args.model_planner else None
             options = {"embeddings": adapter if args.embeddings else None, "planner": adapter if args.model_planner else None}
-            if args.command == "context":
-                task = json.loads(Path(args.task).read_text())
-                packet = compile_context(store, task, args.strategy, args.budget, **options)
-                print(packet["context"] if args.text else json.dumps(packet, indent=2))
-            elif args.command == "benchmark":
+            if args.command == "benchmark":
                 report = evaluate(store, args.suite, args.budget, **options)
                 out = Path(args.out)
                 out.parent.mkdir(parents=True, exist_ok=True)
