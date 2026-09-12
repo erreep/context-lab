@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -104,7 +105,8 @@ class GitGateTests(unittest.TestCase):
 
     def test_installed_hook_gates_real_git_commit(self):
         self.assertEqual(install_git(cwd=str(self.repo)), 0)
-        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        # No PYTHONPATH: the script must locate the checkout through its baked CONTEXT_LAB_HOME.
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
         _git(self.repo, "add", "b.txt")
         blocked = subprocess.run(["git", "commit", "-m", "no lease"], cwd=self.repo,
@@ -115,6 +117,22 @@ class GitGateTests(unittest.TestCase):
         allowed = subprocess.run(["git", "commit", "-m", "leased"], cwd=self.repo,
                                  capture_output=True, text=True, env=env)
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+    def test_installed_hook_names_the_fix_when_not_installed(self):
+        with patch("context_lab.hooks.CONTEXT_LAB_HOME", str(self.root / "nowhere")):
+            self.assertEqual(install_git(cwd=str(self.repo)), 0)
+        # PATH holds only git and python, so `context-lab` cannot be found either.
+        path = os.pathsep.join(sorted({os.path.dirname(shutil.which(x)) for x in ("git", "python3")}))
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PATH")}
+        env["PATH"] = path
+        (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(self.repo, "add", "b.txt")
+        blocked = subprocess.run(["git", "commit", "-m", "x"], cwd=self.repo,
+                                 capture_output=True, text=True, env=env)
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("not installed", blocked.stderr)
+        self.assertIn("pipx install -e", blocked.stderr)
+        self.assertNotIn("Traceback", blocked.stderr)
 
     def test_install_git_refuses_when_hooks_path_set(self):
         _git(self.repo, "config", "core.hooksPath", ".githooks")

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -16,8 +17,10 @@ from .store import Store
 
 INJECT_BUDGET = 400
 LEASE_TTL_MINUTES = 10
-SCOPE_HINT = "Run: python3 -m context_lab hook set-scope --project P --ticket T"
-RECALL_HINT = "Run: python3 -m context_lab hook recall-for --purpose commit"
+SCOPE_HINT = "Run: context-lab hook set-scope --project P --ticket T"
+RECALL_HINT = "Run: context-lab hook recall-for --purpose commit"
+CONTEXT_LAB_HOME = str(ROOT)
+INSTALL_HINT = "pipx install -e {home}  (or: pip install -e {home})"
 # Advisory only: the pre-commit hook is the enforcement point. Handles `git -C x commit`, `git -c k=v commit`.
 GIT_COMMIT_RE = re.compile(r"\bgit\s+(?:-{1,2}\S+(?:\s+[^-\s]\S*)?\s+)*commit\b")
 UNBORN_HEAD = "unborn"
@@ -25,7 +28,16 @@ PRE_COMMIT_SCRIPT = """#!/bin/sh
 # Context Lab recall lease gate. Must run before formatters that rewrite the index.
 # lint-staged style rewrites need a fresh lease after they re-stage files.
 # Upgrade path toward remote verification: a Context-Lab-Run commit trailer.
-python3 -m context_lab hook gate-git commit
+# Fails closed: a missing install blocks the commit with the fix below, never silently.
+CONTEXT_LAB_HOME={home}
+if command -v context-lab >/dev/null 2>&1; then
+  exec context-lab hook gate-git commit
+fi
+if PYTHONPATH="$CONTEXT_LAB_HOME" python3 -c "import context_lab" >/dev/null 2>&1; then
+  PYTHONPATH="$CONTEXT_LAB_HOME" exec python3 -m context_lab hook gate-git commit
+fi
+echo "context-lab: not installed. Run: {install}  (one-off bypass: git commit --no-verify)" >&2
+exit 1
 """
 
 
@@ -321,13 +333,42 @@ def install_git(cwd=None):
             file=sys.stderr,
         )
         return 1
-    # ponytail: `python3 -m context_lab` only imports when the worktree root is this repo; packaging lifts that.
-    target.write_text(PRE_COMMIT_SCRIPT, encoding="utf-8")
+    home = CONTEXT_LAB_HOME
+    target.write_text(PRE_COMMIT_SCRIPT.format(
+        home=shlex.quote(home), install=INSTALL_HINT.format(home=shlex.quote(home))), encoding="utf-8")
     target.chmod(0o755)
     try:
         print(target.relative_to(Path(cwd)))
     except ValueError:
         print(target)
+    return 0
+
+
+HARNESS_CONFIGS = {
+    "claude": {"hooks": {
+        "SessionStart": [{"matcher": m, "hooks": [{"type": "command", "command": "context-lab hook session-start"}]}
+                         for m in ("startup", "resume", "compact")],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "context-lab hook inject"}]}],
+        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "if": "Bash(git commit *)",
+                                                      "command": "context-lab hook gate-git commit --adapter claude"}]}],
+    }},
+    "codex": {"hooks": {
+        "SessionStart": [{"matcher": m, "hooks": [{"type": "command", "command": "context-lab hook session-start"}]}
+                         for m in ("startup", "resume", "compact")],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "context-lab hook inject"}]}],
+    }},
+    "cursor": {"version": 1, "hooks": {
+        "beforeShellExecution": [{"command": "context-lab hook gate-git commit --adapter cursor",
+                                  "matcher": "git commit"}],
+    }},
+}
+CONFIG_PATHS = {"claude": ".claude/settings.json", "codex": ".codex/hooks.json", "cursor": ".cursor/hooks.json"}
+
+
+def print_config(harness):
+    """Config for another repository. Uses the installed `context-lab` console script, so it is machine-portable."""
+    print(f"# {CONFIG_PATHS[harness]}", file=sys.stderr)
+    print(json.dumps(HARNESS_CONFIGS[harness], indent=2))
     return 0
 
 
@@ -347,6 +388,8 @@ def build_parser(sub):
     gate.add_argument("purpose", choices=["commit"])
     gate.add_argument("--adapter", choices=["git", "claude", "cursor"], default="git")
     hook_sub.add_parser("install-git", help="Install worktree pre-commit lease gate")
+    cfg = hook_sub.add_parser("print-config", help="Print hook config JSON for another repository")
+    cfg.add_argument("harness", choices=sorted(HARNESS_CONFIGS))
     return hook
 
 
@@ -368,4 +411,6 @@ def dispatch(args):
         return gate_git(purpose=args.purpose, adapter=args.adapter)
     if args.hook_command == "install-git":
         return install_git()
+    if args.hook_command == "print-config":
+        return print_config(args.harness)
     raise SystemExit(f"unknown hook command: {args.hook_command}")

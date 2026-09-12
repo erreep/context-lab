@@ -22,7 +22,18 @@ python3 -m context_lab hook recall-for --purpose commit
 
 That prints a CompactView and writes a short-lived lease bound to HEAD, the index tree, scope, and `run_id`. Install the verifier once with `python3 -m context_lab hook install-git` (refuses to overwrite an existing `pre-commit` or a set `core.hooksPath`).
 
-Known limit: every hook runs `python3 -m context_lab`, which only imports when the worktree root is this repository. In any other repository the installed `pre-commit` fails with "No module named context_lab" and blocks every commit until packaging lands.
+## Using Context Lab from another repository
+
+Install the console script once per machine, then point hooks at it:
+
+```text
+pipx install -e /path/to/context-lab      # or: pip install -e /path/to/context-lab
+context-lab hook print-config claude      # writes the JSON for .claude/settings.json
+context-lab hook print-config codex       # .codex/hooks.json (needs [features] codex_hooks = true)
+context-lab hook print-config cursor      # .cursor/hooks.json
+```
+
+Inside this repository `python3 -m context_lab` works without installing, so the committed configs use that form. The installed `pre-commit` script tries `context-lab` on PATH first, then the checkout path baked in at install time (GUI Git clients often run hooks with a stripped PATH). If neither works it blocks the commit and prints the install command; it never fails open. A human committing by hand runs `recall-for` like the agent does, or bypasses once with `git commit --no-verify`.
 
 The Git `pre-commit` hook is the enforcement point. It checks the lease. A lease proves a retrieval event under those conditions, not that the agent understood the context. Client hooks (Claude PreToolUse, Cursor beforeShellExecution) are guardrails only, not a security boundary. If a formatter rewrites the index after recall (lint-staged style), run `recall-for` again.
 
