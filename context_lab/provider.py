@@ -87,7 +87,7 @@ class ModelEndpoint:
             needs = lesson.get("need_tags", [])
             if any(a not in rules["actions"] for a in actions) or any(n not in rules["needs"] for n in needs):
                 raise ValueError("Draft uses unknown action or need")
-            m = {"id": new_id("lesson"), "project": source["project"], "kind": "lesson", "status": "candidate",
+            m = {"id": new_id("lesson"), "project": source["project"], "ticket": source.get("ticket", ""), "kind": "lesson", "status": "candidate",
                  "source_ids": [source["id"]], "title": lesson["title"], "claim": lesson["claim"],
                  "rationale": lesson.get("rationale", "") + " Caveat: " + lesson.get("caveat", "Unverified generalization"),
                  "expected_effect": lesson.get("expected_effect", ""), "quote": quote,

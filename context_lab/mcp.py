@@ -7,10 +7,13 @@ import json
 import sys
 
 from .engine import compile_context
+from .knowledge import initiate
+from .store import scope_key
 
 
 TASK = {"type": "object", "properties": {
     "query": {"type": "string"}, "project": {"type": "string"},
+    "ticket": {"type": "string", "description": "Exact ticket ID; omit for project-only context. Other tickets are excluded."},
     "actions": {"type": "array", "items": {"type": "string"}},
     "needs": {"type": "array", "items": {"type": "string"}},
     "state": {"type": "object"}, "as_of": {"type": "string"}}, "required": ["query", "project"]}
@@ -23,13 +26,16 @@ def tool(name, description, properties, required, read_only=True):
 
 
 TOOLS = [
+    tool("memory_initiate", "Check or initialize a project/ticket knowledge base. Call with project/ticket first: existing setup returns already_initialized. Otherwise ask for a local notes folder (path) or empty=true. Categorizes and indexes Markdown/text locally. Repeat calls reuse setup; refresh=true explicitly rescans. Never edits the notes.",
+         {"project": {"type": "string"}, "ticket": {"type": "string"}, "path": {"type": "string"},
+          "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}}, ["project"], False),
     tool("memory_catalog", "List the supported task actions and information needs. Use these to describe your next decision.", {}, []),
     tool("memory_context", "Build task-targeted context. Supply current state and actions where known. Reports unresolved evidence needs. Read source evidence before assuming a conditional lesson applies. Does not prove task sufficiency.",
          {"task": TASK, "budget": {"type": "integer", "minimum": 128, "maximum": 16000}}, ["task"], False),
     tool("memory_source", "Read an immutable evidence source by ID within the specified project.",
-         {"source_id": {"type": "string"}, "project": {"type": "string"}}, ["source_id", "project"]),
+         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"]),
     tool("memory_observe", "Record a source observation. This stores evidence only; it does not create a confirmed lesson.",
-         {"project": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}}, ["project", "title", "body"], False),
+         {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}}, ["project", "title", "body"], False),
     tool("memory_propose", "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. Each needs an existing evidence source.",
          {"memories": {"type": "array", "items": {"type": "object"}}}, ["memories"], False),
     tool("memory_feedback", "Record reported helpful, missed, irrelevant or stale memory and diagnose the pipeline stage from a run snapshot. Feedback is not verified ground truth and does not auto-promote lessons.",
@@ -40,6 +46,8 @@ TOOLS = [
 
 
 def call(store, name, args):
+    if name == "memory_initiate":
+        return initiate(store, **args)
     if name == "memory_catalog":
         from .engine import catalog
         return catalog()
@@ -48,8 +56,8 @@ def call(store, name, args):
         return {k: p[k] for k in ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps")}
     if name == "memory_source":
         s = store.source(args["source_id"])
-        if not s or s["project"] != args["project"]:
-            raise ValueError("Source not found in this project")
+        if not s or scope_key(s) != scope_key(args):
+            raise ValueError("Source not found in this project/ticket")
         return s
     if name == "memory_observe":
         return store.add_source(args)
@@ -108,7 +116,7 @@ def serve_mcp(store, instream=None, outstream=None):
                         raise ValueError("arguments must be an object")
                     data = call(store, params["name"], args)
                     result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}
-                except (ValueError, TypeError, KeyError) as e:
+                except (ValueError, TypeError, KeyError, OSError) as e:
                     result = {"content": [{"type": "text", "text": str(e)}], "isError": True}
             else:
                 response = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}

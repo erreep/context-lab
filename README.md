@@ -155,6 +155,56 @@ emitted context, including gaps and warnings, must fit. Evidence bundles are wit
 instead of being partially truncated. A very large task/header can require increasing
 the budget. The selector is a transparent greedy heuristic, not a learned optimizer.
 
+## Initialize a ticket knowledge base once
+
+The `context-lab` skill in `skills/context-lab` guides setup through the agent's
+question picker (or a conversational question). Select the skill and write
+`/initiate`; in Codex CLI you can mention it as `$context-lab /initiate`.
+The skill asks for the project/ticket identity if missing, checks saved setup,
+then asks for an existing notes folder or an empty knowledge base only when needed.
+
+The same operation is available through `memory_initiate` or the CLI:
+
+```bash
+# Check first; returns needs_knowledge_base or already_initialized.
+python3 -m context_lab initiate --project my-project --ticket PROJ-123
+# Import the selected folder once, including subfolders.
+python3 -m context_lab initiate --project my-project --ticket PROJ-123 --path '/path/to/Obsidian/ticket notes'
+# Alternatively, record an empty setup.
+python3 -m context_lab initiate --project my-project --ticket PROJ-456 --empty
+# Rescan only when explicitly requested; reuses the saved folder.
+python3 -m context_lab initiate --project my-project --ticket PROJ-123 --refresh
+```
+
+Setup is stored in SQLite under the exact project/ticket pair, so it survives
+agent conversations and restarts. Ordinary initiation never rescans an existing
+setup, even if a path is supplied again. A failed import does not mark setup
+complete; a failed refresh preserves the previous searchable snapshot.
+
+The importer reads UTF-8 `.md`, `.markdown` and `.txt` files without modifying
+them. It splits notes at Markdown headings and into bounded excerpts, assigns
+keyword categories from paths/headings, and uses the existing BM25 retriever.
+Hidden files, symlinks and unsupported formats are skipped; links are not followed.
+Limits are 2 MB per note, 20 MB total and 20,000 excerpts per selected folder.
+Categorization is a local heuristic, not model-based semantic classification.
+
+Imported excerpts are `document` references with `indexed` status, kept separately
+from reviewed memories. They can be retrieved immediately, but are not confirmed
+facts or lessons and do not count as declared-need coverage. Original evidence
+snapshots remain available after refresh. Learned lessons still require review.
+
+Pass `ticket` alongside `project` in context tasks, source reads, observations and
+proposed memories. All retrieval strategies filter by this exact scope before
+ranking, conflict checks and dependency traversal. Omitting `ticket` means
+project-only records, **not all tickets**; project-only material is not implicitly
+shared into a ticket. Choose only the folder you want available for that ticket.
+The UI's saved-knowledge-base selector fills both fields for context previews.
+Use a separate agent conversation per ticket to avoid carrying old chat messages.
+
+For complete recovery, retain the SQLite database: it includes setup and searchable
+snapshots. JSON export includes those snapshots for inspection, but JSON import
+supports sources/memories only and rejects exports containing knowledge bases.
+
 ## Connect an agent
 
 **CLI:** have an agent write a task object, then invoke:
@@ -182,6 +232,7 @@ Exposed tools:
 
 | Tool | Purpose |
 |---|---|
+| `memory_initiate` | Check, initialize once, or explicitly refresh a project/ticket knowledge base |
 | `memory_catalog` | Discover the starter action/need vocabulary |
 | `memory_context` | Build a compact, targeted packet and save a run snapshot |
 | `memory_source` | Read original evidence within a project |

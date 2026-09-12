@@ -4,6 +4,7 @@ import os
 from .engine import ROOT, STRATEGIES, catalog, compile_context, plan_task
 from .evaluate import evaluate
 from .provider import ModelEndpoint
+from .knowledge import initiate
 
 
 def provider_flags(store, options):
@@ -21,6 +22,8 @@ def compare(store, payload):
 
 
 def dispatch(store, operation, payload):
+    if operation == "initiate":
+        return initiate(store, **payload)
     if operation == "compare":
         return compare(store, payload)
     if operation == "context":
@@ -43,7 +46,9 @@ def dispatch(store, operation, payload):
 
 
 def info(store):
-    return {"version": "0.1.0", "projects": sorted({s["project"] for s in store.sources()}),
+    bases = store.knowledge_bases()
+    return {"version": "0.1.0", "projects": sorted({s["project"] for s in store.sources()} | {b["project"] for b in bases}),
+            "knowledge_bases": bases,
             "memories": store.memories(), "sources": store.sources(), "feedback": store.feedback(),
             "catalog": catalog(),
             "model_available": bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_MODEL")),

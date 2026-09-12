@@ -83,7 +83,7 @@ def serve(db_path, host="127.0.0.1", port=8765):
                 finally:
                     store.close()
                 self.send(200, result)
-            except (ValueError, TypeError, KeyError) as e:
+            except (ValueError, TypeError, KeyError, OSError) as e:
                 self.send(400, {"error": str(e)})
             except Exception:
                 logging.exception("Request failed")

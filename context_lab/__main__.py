@@ -14,6 +14,12 @@ def main():
     parser.add_argument("--db", default=str(ROOT / "workspace" / "memory.sqlite3"))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("demo", help="Initialize the synthetic demo corpus without replacing existing memories")
+    setup = sub.add_parser("initiate", help="Check or initialize a project/ticket knowledge base once")
+    setup.add_argument("--project", required=True)
+    setup.add_argument("--ticket", default="")
+    setup.add_argument("--path", help="Local Markdown/text folder, including an Obsidian folder")
+    setup.add_argument("--empty", action="store_true", help="Initialize without existing notes")
+    setup.add_argument("--refresh", action="store_true", help="Explicitly refresh an existing snapshot")
     web = sub.add_parser("serve", help="Run the local inspection UI")
     web.add_argument("--port", type=int, default=8765)
     context = sub.add_parser("context", help="Build a context packet from a task JSON file")
@@ -41,6 +47,9 @@ def main():
     try:
         if args.command == "demo":
             print(json.dumps(store.seed(ROOT / "data/memories.json")))
+        elif args.command == "initiate":
+            from .knowledge import initiate
+            print(json.dumps(initiate(store, args.project, args.ticket, args.path, args.empty, args.refresh), indent=2))
         elif args.command == "serve":
             from .server import serve
             serve(args.db, port=args.port)
@@ -49,6 +58,8 @@ def main():
             serve_mcp(store)
         elif args.command == "import":
             data = json.loads(Path(args.file).read_text())
+            if data.get("knowledge_bases"):
+                raise ValueError("Restore the SQLite backup to preserve knowledge-base setup; JSON import supports sources and memories only")
             sources = [store.add_source(s) for s in data.get("sources", [])]
             memories = store.put_memories(data["memories"]) if data.get("memories") else []
             print(json.dumps({"sources": len(sources), "memories": len(memories)}))

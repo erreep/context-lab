@@ -188,7 +188,7 @@ class CoreTests(unittest.TestCase):
         serve_mcp(self.store, io.StringIO("\n".join(map(json.dumps, msgs))), out)
         results = [json.loads(x) for x in out.getvalue().splitlines()]
         self.assertEqual(len(results), 5)
-        self.assertEqual(len(results[1]["result"]["tools"]), 6)
+        self.assertIn("memory_initiate", {t["name"] for t in results[1]["result"]["tools"]})
         data = json.loads(results[2]["result"]["content"][0]["text"])
         self.assertIn("C-brand", data["context"])
         self.assertTrue(results[3]["result"]["isError"])

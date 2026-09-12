@@ -26,6 +26,15 @@ def checked_date(value):
     return value
 
 
+def scope_key(record):
+    project, ticket = record.get("project"), record.get("ticket", "")
+    if not isinstance(project, str) or not project.strip():
+        raise ValueError("Scope requires a nonempty project")
+    if not isinstance(ticket, str):
+        raise ValueError("ticket must be text; omit it for project-only context")
+    return project.strip(), ticket.strip()
+
+
 def validate_memory(raw):
     if not isinstance(raw, dict):
         raise ValueError("Memory must be a JSON object")
@@ -33,6 +42,7 @@ def validate_memory(raw):
     for key in ("id", "project", "title", "claim", "kind"):
         if not isinstance(m.get(key), str) or not m[key].strip():
             raise ValueError(f"Memory requires nonempty {key}")
+    m["project"], m["ticket"] = scope_key(m)
     if m["kind"] not in KINDS:
         raise ValueError("Unknown memory kind")
     m.setdefault("status", "candidate")
@@ -100,7 +110,15 @@ class Store:
             id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS embeddings (
             key TEXT PRIMARY KEY, vector TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS knowledge_bases (
+            project TEXT NOT NULL, ticket TEXT NOT NULL, payload TEXT NOT NULL,
+            PRIMARY KEY(project, ticket));
         """)
+        # Existing stores predate ticket scope; their records remain project-only.
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            if "ticket" not in {r[1] for r in self.db.execute("PRAGMA table_info(sources)")}:
+                self.db.execute("ALTER TABLE sources ADD COLUMN ticket TEXT NOT NULL DEFAULT ''")
 
     def close(self):
         self.db.close()
@@ -110,18 +128,31 @@ class Store:
         for key in ("project", "title", "body"):
             if not isinstance(s.get(key), str) or not s[key].strip():
                 raise ValueError(f"Source requires nonempty {key}")
+        s["project"], s["ticket"] = scope_key(s)
         s.setdefault("id", new_id("src"))
         s.setdefault("created_at", now())
         s["sha256"] = hashlib.sha256(s["body"].encode()).hexdigest()
         old = self.source(s["id"])
         if old:
-            if all(old[k] == s[k] for k in ("project", "title", "body")):
+            if all(old[k] == s[k] for k in ("project", "ticket", "title", "body")):
                 return old
             raise ValueError("Sources are immutable; create a new source ID")
         with self.db:
-            self.db.execute("INSERT INTO sources VALUES (?,?,?,?,?,?)",
-                            tuple(s[k] for k in ("id", "project", "title", "body", "created_at", "sha256")))
+            self.db.execute("INSERT INTO sources (id,project,title,body,created_at,sha256,ticket) VALUES (?,?,?,?,?,?,?)",
+                            tuple(s[k] for k in ("id", "project", "title", "body", "created_at", "sha256", "ticket")))
         return s
+
+    def knowledge_base(self, project, ticket=""):
+        row = self.db.execute("SELECT payload FROM knowledge_bases WHERE project=? AND ticket=?",
+                              scope_key({"project": project, "ticket": ticket})).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def knowledge_bases(self):
+        return [{k: v for k, v in json.loads(r[0]).items() if k != "documents"}
+                for r in self.db.execute("SELECT payload FROM knowledge_bases ORDER BY project,ticket")]
+
+    def documents(self, project, ticket=""):
+        return (self.knowledge_base(project, ticket) or {}).get("documents", [])
 
     def source(self, sid):
         row = self.db.execute("SELECT * FROM sources WHERE id=?", (sid,)).fetchone()
@@ -165,17 +196,17 @@ class Store:
                     s = self.source(sid)
                     if not s:
                         raise ValueError(f"Missing evidence source: {sid}")
-                    if s["project"] != m["project"]:
-                        raise ValueError("Memory and evidence must belong to the same project")
+                    if scope_key(s) != scope_key(m):
+                        raise ValueError("Memory and evidence must belong to the same project and ticket")
                 if m["quote"] and not any(m["quote"] in self.source(s)["body"] for s in m["source_ids"]):
                     raise ValueError("Evidence quote must be an exact excerpt from a linked source")
                 for ref in m["depends_on"] + m["supersedes"]:
-                    if ref not in proposed or proposed[ref]["project"] != m["project"]:
-                        raise ValueError(f"Missing or cross-project memory reference: {ref}")
+                    if ref not in proposed or scope_key(proposed[ref]) != scope_key(m):
+                        raise ValueError(f"Missing or cross-project/ticket memory reference: {ref}")
                 old = existing.get(m["id"])
                 expected = m.pop("expected_version", None)
-                if old and old["project"] != m["project"]:
-                    raise ValueError("A memory ID cannot move between projects; create a new ID")
+                if old and scope_key(old) != scope_key(m):
+                    raise ValueError("A memory ID cannot move between projects or tickets; create a new ID")
                 if old and expected != old["version"]:
                     raise ValueError(f"Revision conflict for {m['id']}; expected_version must be {old['version']}")
                 if not old and expected not in (None, 0):
@@ -259,7 +290,8 @@ class Store:
         return [json.loads(r[0]) for r in self.db.execute("SELECT payload FROM feedback ORDER BY created_at DESC")]
 
     def export(self):
-        return {"schema_version": 1, "sources": self.sources(), "memories": self.memories(),
+        return {"schema_version": 2, "sources": self.sources(), "memories": self.memories(),
+                "knowledge_bases": [json.loads(r[0]) for r in self.db.execute("SELECT payload FROM knowledge_bases ORDER BY project,ticket")],
                 "revisions": {m["id"]: self.revisions(m["id"]) for m in self.memories()}, "feedback": self.feedback()}
 
     def seed(self, filename):
