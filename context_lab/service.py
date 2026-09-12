@@ -8,10 +8,18 @@ from .knowledge import allocate_ticket, initiate
 from .store import GLOBAL_PROJECT, scope_key, scope_layers
 
 
-def provider_flags(store, options):
-    model = ModelEndpoint(store) if options.get("model_planner") or options.get("embeddings") else None
-    return {"planner": model if options.get("model_planner") else None,
-            "embeddings": model if options.get("embeddings") else None}
+def provider_flags(store, options=None):
+    options = options or {}
+    want_planner = options.get("model_planner")
+    want_embeddings = options.get("embeddings")
+    # Shared server config: env alone is enough for MCP. Payload flags remain for workbench toggles.
+    if want_planner is None:
+        want_planner = bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_MODEL"))
+    if want_embeddings is None:
+        want_embeddings = bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_EMBEDDING_MODEL"))
+    model = ModelEndpoint(store) if want_planner or want_embeddings else None
+    return {"planner": model if want_planner else None,
+            "embeddings": model if want_embeddings else None}
 
 
 def compare(store, payload):

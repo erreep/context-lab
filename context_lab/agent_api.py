@@ -4,6 +4,7 @@ from __future__ import annotations
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context
 from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context
+from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
 
 
@@ -92,7 +93,8 @@ def context(store, task, budget=1200, detail="agent"):
     # Leave headroom so picks/needs/wire fields on CompactView still fit the caller budget.
     compact = detail in {"agent", "prose"}
     select_budget = max(128, budget - 120) if compact else budget
-    packet = compile_context(store, task, budget=select_budget)
+    flags = provider_flags(store)
+    packet = compile_context(store, task, budget=select_budget, **flags)
     view = format_context(packet, detail)
     if compact and view["wire_estimated_tokens"] > budget:
         raise AgentError(

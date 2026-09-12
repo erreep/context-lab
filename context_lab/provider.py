@@ -8,11 +8,29 @@ import json
 import math
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def assert_local_host(url):
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in LOOPBACK_HOSTS:
+        raise ValueError("CONTEXT_LAB_LOCAL_ONLY requires a loopback CONTEXT_LAB_BASE_URL (127.0.0.1, localhost, ::1)")
+    if parsed.username or parsed.password:
+        raise ValueError("Model endpoint URL must not include userinfo")
+
+
+def env_local_only():
+    raw = os.environ.get("CONTEXT_LAB_LOCAL_ONLY", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 class ModelEndpoint:
-    def __init__(self, store=None, base_url=None, model=None, embedding_model=None):
+    def __init__(self, store=None, base_url=None, model=None, embedding_model=None, local_only=None):
         self.base = (base_url or os.environ.get("CONTEXT_LAB_BASE_URL", "")).rstrip("/")
         self.model = model or os.environ.get("CONTEXT_LAB_MODEL", "")
         self.embedding_model = embedding_model or os.environ.get("CONTEXT_LAB_EMBEDDING_MODEL", "")
@@ -20,6 +38,10 @@ class ModelEndpoint:
         self.store = store
         if not self.base.startswith(("http://", "https://")):
             raise ValueError("Set CONTEXT_LAB_BASE_URL to a compatible endpoint, including /v1 if required")
+        if local_only is None:
+            local_only = env_local_only()
+        if local_only:
+            assert_local_host(self.base)
 
     def request(self, route, payload):
         headers = {"Content-Type": "application/json"}

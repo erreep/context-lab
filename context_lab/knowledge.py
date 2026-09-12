@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +15,8 @@ LAB_VAULT_PROJECT = "__lab__"
 
 
 def allocate_ticket():
-    return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    # Same-second callers need a unique suffix (Astra collision report).
+    return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
 
 
 def empty_kb_record(project, ticket=""):
