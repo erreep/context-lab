@@ -1,11 +1,11 @@
-"""Worktree-scoped harness hooks: scope, ambient inject, session-start, git lease (later)."""
+"""Worktree-scoped harness hooks: scope, ambient inject, session-start, commit lease."""
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import agent_api
@@ -14,7 +14,15 @@ from .schemas import GATE_TEXT, AgentError, wire_dumps
 from .store import Store
 
 INJECT_BUDGET = 400
+LEASE_TTL_MINUTES = 10
 SCOPE_HINT = "Run: python3 -m context_lab hook set-scope --project P --ticket T"
+RECALL_HINT = "Run: python3 -m context_lab hook recall-for --purpose commit"
+PRE_COMMIT_SCRIPT = """#!/bin/sh
+# Context Lab recall lease gate. Must run before formatters that rewrite the index.
+# lint-staged style rewrites need a fresh lease after they re-stage files.
+# Upgrade path toward remote verification: a Context-Lab-Run commit trailer.
+python3 -m context_lab hook gate-git commit
+"""
 
 
 def _git(args, cwd=None, check=True):
@@ -22,12 +30,9 @@ def _git(args, cwd=None, check=True):
         ["git", *args], cwd=cwd, capture_output=True, text=True,
     )
     if check and result.returncode != 0:
-        raise AgentError(
-            "not_a_worktree",
-            (result.stderr or result.stdout or "git failed").strip().splitlines()[-1]
-            if (result.stderr or result.stdout) else "git failed",
-            hint=SCOPE_HINT,
-        )
+        err = (result.stderr or result.stdout or "git failed").strip()
+        line = err.splitlines()[-1] if err else "git failed"
+        raise AgentError("not_a_worktree", line, hint=SCOPE_HINT)
     return result
 
 
@@ -51,6 +56,10 @@ def default_db():
 
 def scope_path(cwd=None):
     return git_path("context-lab", cwd=cwd) / "scope.json"
+
+
+def lease_path(cwd=None):
+    return git_path("context-lab", cwd=cwd) / "lease-commit.json"
 
 
 def load_scope(cwd=None):
@@ -159,8 +168,149 @@ def session_start(payload=None):
     return 0
 
 
+def _git_state(cwd=None):
+    head = _git(["rev-parse", "HEAD"], cwd=cwd, check=False)
+    head_oid = head.stdout.strip() if head.returncode == 0 else "4b825dc642cb6eb9a060e54bf8d6927bfbfd61"
+    git_dir = _git(["rev-parse", "--git-dir"], cwd=cwd).stdout.strip()
+    index_tree = _git(["write-tree"], cwd=cwd).stdout.strip()
+    return head_oid, git_dir, index_tree
+
+
+def recall_for(purpose="commit", cwd=None, budget=INJECT_BUDGET):
+    if purpose != "commit":
+        raise AgentError("validation", "purpose must be commit", field="purpose")
+    cwd = require_worktree(cwd)
+    scope = load_scope(cwd=cwd)
+    staged = _git(["diff", "--cached", "--name-only"], cwd=cwd).stdout.strip()
+    query = f"purpose={purpose}\nstaged:\n{staged or '(none)'}"
+    store = Store(scope["db"])
+    try:
+        view = agent_api.context(
+            store,
+            {"query": query, "project": scope["project"], "ticket": scope["ticket"]},
+            budget=budget,
+            detail="agent",
+        )
+        head_oid, git_dir, index_tree = _git_state(cwd=cwd)
+        now = datetime.now(timezone.utc)
+        lease = {
+            "run_id": view["run_id"],
+            "db": scope["db"],
+            "project": scope["project"],
+            "ticket": scope["ticket"],
+            "purpose": purpose,
+            "worktree_git_dir": git_dir,
+            "head_oid": head_oid,
+            "index_tree": index_tree,
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(minutes=LEASE_TTL_MINUTES)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        path = lease_path(cwd=cwd)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(lease, indent=2) + "\n", encoding="utf-8")
+    finally:
+        store.close()
+    print(json.dumps(view, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _deny_out(adapter, reason):
+    if adapter == "claude":
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        }))
+        return 0
+    if adapter == "cursor":
+        print(json.dumps({"permission": "deny", "userMessage": reason}))
+        return 0
+    print(reason, file=sys.stderr)
+    return 1
+
+
+def gate_git(purpose="commit", cwd=None, adapter="git"):
+    if purpose != "commit":
+        return _deny_out(adapter, f"unsupported purpose {purpose}; {RECALL_HINT}")
+    cwd = cwd or os.getcwd()
+    try:
+        require_worktree(cwd)
+        scope = load_scope(cwd=cwd)
+    except AgentError as e:
+        return _deny_out(adapter, f"{e.message}; {e.hint or SCOPE_HINT}")
+    path = lease_path(cwd=cwd)
+    if not path.is_file():
+        return _deny_out(adapter, f"missing lease; {RECALL_HINT}")
+    try:
+        lease = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return _deny_out(adapter, f"invalid lease; {RECALL_HINT}")
+
+    def fail(check):
+        return _deny_out(adapter, f"{check}; {RECALL_HINT}")
+
+    try:
+        expires = datetime.strptime(lease["expires_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return fail("lease expires_at invalid")
+    if datetime.now(timezone.utc) > expires:
+        return fail("lease expired")
+    if lease.get("db") != scope["db"]:
+        return fail("lease db mismatch")
+    if lease.get("project") != scope["project"] or lease.get("ticket") != scope["ticket"]:
+        return fail("lease project/ticket mismatch")
+    if lease.get("purpose") != purpose:
+        return fail("lease purpose mismatch")
+    head_oid, git_dir, index_tree = _git_state(cwd=cwd)
+    if lease.get("worktree_git_dir") != git_dir:
+        return fail("lease worktree_git_dir mismatch")
+    if lease.get("head_oid") != head_oid:
+        return fail("lease head_oid mismatch")
+    if lease.get("index_tree") != index_tree:
+        return fail("lease index_tree mismatch")
+    run_id = lease.get("run_id")
+    if not isinstance(run_id, str) or not run_id.strip():
+        return fail("lease run_id missing")
+    store = Store(scope["db"])
+    try:
+        if not store.run(run_id):
+            return fail("lease run_id absent from database")
+    finally:
+        store.close()
+    return 0
+
+
+def install_git(cwd=None):
+    cwd = require_worktree(cwd)
+    configured = _git(["config", "--get", "core.hooksPath"], cwd=cwd, check=False)
+    if configured.returncode == 0 and configured.stdout.strip():
+        print(
+            f"core.hooksPath is set; add this line to your pre-commit:\npython3 -m context_lab hook gate-git commit",
+            file=sys.stderr,
+        )
+        return 1
+    hooks_dir = git_path("hooks", cwd=cwd)
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    target = hooks_dir / "pre-commit"
+    if target.exists():
+        print(
+            f"pre-commit already exists; add this line:\npython3 -m context_lab hook gate-git commit",
+            file=sys.stderr,
+        )
+        return 1
+    target.write_text(PRE_COMMIT_SCRIPT, encoding="utf-8")
+    target.chmod(0o755)
+    try:
+        print(target.relative_to(Path(cwd)))
+    except ValueError:
+        print(target)
+    return 0
+
+
 def build_parser(sub):
-    hook = sub.add_parser("hook", help="Harness hooks: scope, inject, session-start")
+    hook = sub.add_parser("hook", help="Harness hooks: scope, inject, lease, git gate")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
     scope_p = hook_sub.add_parser("set-scope", help="Bind project/ticket/db to this worktree")
     scope_p.add_argument("--project", required=True)
@@ -168,6 +318,13 @@ def build_parser(sub):
     scope_p.add_argument("--db", default=None)
     hook_sub.add_parser("inject", help="UserPromptSubmit ambient CompactView injection")
     hook_sub.add_parser("session-start", help="SessionStart standing rules + gate text")
+    recall = hook_sub.add_parser("recall-for", help="Recall and issue a commit lease")
+    recall.add_argument("--purpose", required=True, choices=["commit"])
+    recall.add_argument("--budget", type=int, default=INJECT_BUDGET)
+    gate = hook_sub.add_parser("gate-git", help="Verify the commit recall lease")
+    gate.add_argument("purpose", choices=["commit"])
+    gate.add_argument("--adapter", choices=["git", "claude", "cursor"], default="git")
+    hook_sub.add_parser("install-git", help="Install worktree pre-commit lease gate")
     return hook
 
 
@@ -179,4 +336,14 @@ def dispatch(args):
         return inject()
     if args.hook_command == "session-start":
         return session_start()
+    if args.hook_command == "recall-for":
+        try:
+            return recall_for(purpose=args.purpose, budget=args.budget)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+    if args.hook_command == "gate-git":
+        return gate_git(purpose=args.purpose, adapter=args.adapter)
+    if args.hook_command == "install-git":
+        return install_git()
     raise SystemExit(f"unknown hook command: {args.hook_command}")
