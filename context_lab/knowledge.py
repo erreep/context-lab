@@ -4,9 +4,14 @@ import json
 import os
 import re
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .store import now, scope_key
+
+
+def allocate_ticket():
+    return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
 CATEGORIES = {
@@ -93,7 +98,8 @@ def initiate(store, project, ticket="", path=None, empty=False, refresh=False):
 
         for directory, folders, files in os.walk(root, onerror=walk_error, followlinks=False):
             folders[:] = sorted(d for d in folders if not d.startswith(".")
-                                and d != "node_modules" and not (Path(directory) / d).is_symlink())
+                                and d not in {"node_modules", "Cl"}
+                                and not (Path(directory) / d).is_symlink())
             for filename in sorted(files):
                 file = Path(directory) / filename
                 if filename.startswith(".") or file.is_symlink() or file.suffix.lower() not in {".md", ".markdown", ".txt"}:

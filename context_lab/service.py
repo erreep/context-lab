@@ -4,7 +4,8 @@ import os
 from .engine import ROOT, STRATEGIES, catalog, compile_context, plan_task
 from .evaluate import evaluate
 from .provider import ModelEndpoint
-from .knowledge import initiate
+from .knowledge import allocate_ticket, initiate
+from .store import GLOBAL_PROJECT, scope_key, scope_layers
 
 
 def provider_flags(store, options):
@@ -45,14 +46,50 @@ def dispatch(store, operation, payload):
         if not source:
             raise ValueError("Unknown source_id")
         return ModelEndpoint(store).draft(source)
+    if operation == "allocate-ticket":
+        return {"ticket": allocate_ticket()}
     raise ValueError("Unknown operation")
 
 
-def info(store):
+def scopes(store):
+    rows = store.list_scope_rows()
+    by_project = {}
+    for row in rows:
+        by_project.setdefault(row["project"], []).append(row)
+    return {"scopes": rows, "by_project": by_project}
+
+
+def info(store, project=None, ticket=None):
     bases = store.knowledge_bases()
-    return {"version": "0.1.0", "projects": sorted({s["project"] for s in store.sources()} | {b["project"] for b in bases}),
-            "knowledge_bases": bases,
-            "memories": store.memories(), "sources": store.sources(), "feedback": store.feedback(),
-            "catalog": catalog(),
-            "model_available": bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_MODEL")),
-            "embeddings_available": bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_EMBEDDING_MODEL"))}
+    scope_rows = store.list_scope_rows()
+    projects = sorted({s["project"] for s in store.sources()} | {b["project"] for b in bases} | {GLOBAL_PROJECT},
+                      key=lambda p: (p != GLOBAL_PROJECT, p))
+    payload = {"version": "0.1.0",
+               "projects": projects,
+               "knowledge_bases": bases, "scopes": scope_rows, "feedback": store.feedback(),
+               "catalog": catalog(),
+               "model_available": bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_MODEL")),
+               "embeddings_available": bool(os.environ.get("CONTEXT_LAB_BASE_URL") and os.environ.get("CONTEXT_LAB_EMBEDDING_MODEL"))}
+    if project is not None:
+        key = scope_key({"project": project, "ticket": ticket if ticket is not None else ""})
+        project, ticket = key
+        payload["memories"] = store.memories(project=project, ticket=ticket)
+        payload["sources"] = store.sources(project=project, ticket=ticket)
+        inherited_m, inherited_s = [], []
+        for layer_project, layer_ticket in scope_layers({"project": project, "ticket": ticket}):
+            if (layer_project, layer_ticket) == key:
+                continue
+            inherited_m.extend(store.memories(project=layer_project, ticket=layer_ticket))
+            inherited_s.extend(store.sources(project=layer_project, ticket=layer_ticket))
+        payload["inherited_memories"] = inherited_m
+        payload["inherited_sources"] = inherited_s
+        payload["knowledge_bases"] = [b for b in bases if scope_key(b) == key]
+        payload["feedback"] = [f for f in payload["feedback"]
+                               if isinstance(f.get("task"), dict) and scope_key(f["task"]) == key]
+        payload["scope"] = next((r for r in scope_rows if r["project"] == project and r["ticket"] == ticket), None)
+    else:
+        payload["memories"] = store.memories()
+        payload["sources"] = store.sources()
+        payload["inherited_memories"] = []
+        payload["inherited_sources"] = []
+    return payload

@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from .store import checked_date, scope_key
+from .store import GLOBAL_PROJECT, checked_date, layer_rank, scope_key, scope_layers
 
 ROOT = Path(__file__).resolve().parent.parent
 STOP = set("a an and are as at be by can could for from how i in is it of on or our please that the their this to we with would you your".split())
@@ -146,8 +146,12 @@ def memory_block(m, check=None):
     if m.get("expected_effect"):
         lines.append("Expected effect: " + m["expected_effect"])
     lines.append(f"Scope: {m['project']}; valid from {m['valid_from']}" + (f" until {m['valid_until']} (exclusive)" if m.get("valid_until") else ""))
-    if m.get("ticket"):
-        lines.append("Ticket: " + m["ticket"])
+    if m["project"] == GLOBAL_PROJECT:
+        lines.append("Layer: lab-wide (applies to every project)")
+    elif m.get("ticket"):
+        lines.append("Layer: ticket " + m["ticket"])
+    else:
+        lines.append("Layer: project baseline (applies to every ticket in this project)")
     if m.get("applies"):
         lines.append("Use conditions: " + json.dumps(m["applies"], sort_keys=True))
     if m.get("unless"):
@@ -174,9 +178,12 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
     task = plan_task(raw_task, planner=planner)
     if planning_metadata is not None:
         task["planning"] = planning_metadata
-    # Filter before ranking, supersession, conflicts and dependency traversal.
-    all_memories = [m for m in store.memories() if scope_key(m) == scope_key(task)]
-    all_memories += store.documents(task["project"], task["ticket"])
+    # Layered scope: lab-wide → project baseline → exact ticket. Other tickets stay isolated.
+    layers = set(scope_layers(task))
+    all_memories = [m for m in store.memories() if scope_key(m) in layers]
+    for project, ticket in scope_layers(task):
+        all_memories += store.documents(project, ticket)
+    all_memories.sort(key=lambda m: (layer_rank(m), m["id"]))
     trace, eligible = {}, {}
     # Scope, candidate exclusion, time validity and supersession are shared by all arms.
     retired = set()
@@ -252,7 +259,8 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
         if score > 0:
             candidates.append(mid)
             trace[mid].update(stage="candidate", reasons=reasons, score=round(score, 5))
-    candidates.sort(key=lambda mid: (-trace[mid]["score"], mid))
+    # Lab-wide first, then project baseline, then ticket; score breaks ties within a layer.
+    candidates.sort(key=lambda mid: (layer_rank(eligible[mid]), -trace[mid]["score"], mid))
     # Conflicting assertions are surfaced even if only one side wins lexical ranking.
     by_assertion = {}
     for mid, m in pool.items():
@@ -269,6 +277,9 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
                 trace[mid].update(stage="candidate", score=1.5, reasons=["Conflicting evidence for a required need"])
     prefix = ("Task: " + task["query"] + "\nProject: " + task["project"] + "; as of: " + task["as_of"] +
               ("\nTicket: " + task["ticket"] if task["ticket"] else "") +
+              "\nScope layers: lab-wide" +
+              ("" if task["project"] == GLOBAL_PROJECT else ", project baseline") +
+              (", ticket" if task["ticket"] else "") +
               "\nKnown state: " + json.dumps(task["state"], sort_keys=True) +
               "\nUse evidence within its stated scope. Conditional lessons require checking.\n")
     selected_ids, blocks = [], []
@@ -296,7 +307,9 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
         # Cover new needs before buying redundant context; baseline retains retrieval order.
         if strategy == "targeted":
             covered = {n for mid in selected_ids for n in eligible[mid]["need_tags"]}
-            pending.sort(key=lambda mid: (-(trace[mid]["score"] + 2 * len((needs-covered) & set(pool[mid]["need_tags"]))), mid))
+            pending.sort(key=lambda mid: (layer_rank(eligible[mid]),
+                                          -(trace[mid]["score"] + 2 * len((needs - covered) & set(pool[mid]["need_tags"]))),
+                                          mid))
         mid = pending.pop(0)
         if mid in selected_ids:
             continue

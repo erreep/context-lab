@@ -28,3 +28,5 @@ Before a decision that depends on prior incidents, constraints, lessons, or proj
 - Missing state is unknown, not false.
 - A prior agent suggestion is not a confirmed project change.
 - Default demo project is `fieldnote` after an empty DB is seeded.
+- Retrieval layers lab-wide (`__global__`) → project baseline → ticket; sibling tickets stay isolated.
+- Lab-wide writes need explicit user approval and `confirm_global=true`; keep them sparse.

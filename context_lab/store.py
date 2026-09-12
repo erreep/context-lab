@@ -11,6 +11,8 @@ from pathlib import Path
 
 KINDS = {"fact", "constraint", "decision", "event", "lesson"}
 STATUSES = {"candidate", "confirmed", "retracted"}
+# Reserved project for sparse lab-wide standing rules that apply to every project.
+GLOBAL_PROJECT = "__global__"
 
 
 def now():
@@ -35,6 +37,35 @@ def scope_key(record):
     return project.strip(), ticket.strip()
 
 
+def scope_layers(record):
+    """Ordered scopes that apply while working in this task scope.
+
+    Lab-wide globals first, then the project's baseline (ticket ''), then the
+    exact ticket when one is set. Other tickets never inherit into each other.
+    """
+    project, ticket = scope_key(record)
+    layers = [(GLOBAL_PROJECT, "")]
+    if project != GLOBAL_PROJECT:
+        layers.append((project, ""))
+        if ticket:
+            layers.append((project, ticket))
+    return layers
+
+
+def scope_covers(owner, dependent):
+    """True when dependent may reference owner (same scope or an ancestor layer)."""
+    return scope_key(owner) in set(scope_layers(dependent))
+
+
+def layer_rank(record):
+    project, ticket = scope_key(record)
+    if project == GLOBAL_PROJECT:
+        return 0
+    if ticket == "":
+        return 1
+    return 2
+
+
 def validate_memory(raw):
     if not isinstance(raw, dict):
         raise ValueError("Memory must be a JSON object")
@@ -43,6 +74,10 @@ def validate_memory(raw):
         if not isinstance(m.get(key), str) or not m[key].strip():
             raise ValueError(f"Memory requires nonempty {key}")
     m["project"], m["ticket"] = scope_key(m)
+    if m["project"] == GLOBAL_PROJECT and m["ticket"]:
+        raise ValueError("Lab-wide memories cannot carry a ticket")
+    if m["project"] == GLOBAL_PROJECT and not m.pop("confirm_global", False):
+        raise ValueError("Lab-wide memories require confirm_global=true after explicit user approval")
     if m["kind"] not in KINDS:
         raise ValueError("Unknown memory kind")
     m.setdefault("status", "candidate")
@@ -129,6 +164,10 @@ class Store:
             if not isinstance(s.get(key), str) or not s[key].strip():
                 raise ValueError(f"Source requires nonempty {key}")
         s["project"], s["ticket"] = scope_key(s)
+        if s["project"] == GLOBAL_PROJECT and s["ticket"]:
+            raise ValueError("Lab-wide evidence cannot carry a ticket")
+        if s["project"] == GLOBAL_PROJECT and not s.pop("confirm_global", False):
+            raise ValueError("Lab-wide evidence requires confirm_global=true after explicit user approval")
         s.setdefault("id", new_id("src"))
         s.setdefault("created_at", now())
         s["sha256"] = hashlib.sha256(s["body"].encode()).hexdigest()
@@ -158,18 +197,61 @@ class Store:
         row = self.db.execute("SELECT * FROM sources WHERE id=?", (sid,)).fetchone()
         return dict(row) if row else None
 
-    def sources(self, project=None):
-        if project:
-            rows = self.db.execute("SELECT * FROM sources WHERE project=? ORDER BY id", (project,))
+    def sources(self, project=None, ticket=None):
+        if ticket is not None and project is None:
+            raise ValueError("ticket filter requires project")
+        if project is not None and ticket is not None:
+            project, ticket = scope_key({"project": project, "ticket": ticket})
+            rows = self.db.execute("SELECT * FROM sources WHERE project=? AND ticket=? ORDER BY id", (project, ticket))
+        elif project is not None:
+            rows = self.db.execute("SELECT * FROM sources WHERE project=? ORDER BY id", (project.strip(),))
         else:
             rows = self.db.execute("SELECT * FROM sources ORDER BY id")
         return [dict(r) for r in rows]
 
-    def memories(self):
+    def memories(self, project=None, ticket=None):
+        if ticket is not None and project is None:
+            raise ValueError("ticket filter requires project")
         rows = self.db.execute("""SELECT m.* FROM memories m JOIN
           (SELECT id, MAX(version) AS v FROM memories GROUP BY id) x
           ON m.id=x.id AND m.version=x.v ORDER BY m.id""")
-        return [dict(json.loads(r["payload"]), version=r["version"], recorded_at=r["recorded_at"]) for r in rows]
+        out = [dict(json.loads(r["payload"]), version=r["version"], recorded_at=r["recorded_at"]) for r in rows]
+        if project is not None and ticket is not None:
+            key = scope_key({"project": project, "ticket": ticket})
+            out = [m for m in out if scope_key(m) == key]
+        elif project is not None:
+            out = [m for m in out if m["project"] == project.strip()]
+        return out
+
+    def list_scope_rows(self):
+        rows = {}
+
+        def row(project, ticket):
+            key = (project, ticket)
+            if key not in rows:
+                rows[key] = {"project": project, "ticket": ticket,
+                             "label": ("Lab-wide" if project == GLOBAL_PROJECT else
+                                       "Project baseline" if ticket == "" else ticket),
+                             "memory_count": 0, "source_count": 0, "note_count": 0, "kb_initialized": False}
+            return rows[key]
+
+        for kb in self.knowledge_bases():
+            project, ticket = scope_key(kb)
+            entry = row(project, ticket)
+            entry["kb_initialized"] = True
+            entry["note_count"] = kb.get("note_count", 0)
+        for source in self.sources():
+            project, ticket = scope_key(source)
+            row(project, ticket)["source_count"] += 1
+        for memory in self.memories():
+            project, ticket = scope_key(memory)
+            row(project, ticket)["memory_count"] += 1
+        row(GLOBAL_PROJECT, "")
+        for project in {p for p, _ in rows}:
+            row(project, "")
+        # Lab-wide first, then projects alphabetically; baseline before tickets within a project.
+        return sorted(rows.values(), key=lambda item: (
+            item["project"] != GLOBAL_PROJECT, item["project"], item["ticket"] != "", item["ticket"]))
 
     def memory(self, mid):
         rows = self.revisions(mid)
@@ -183,7 +265,15 @@ class Store:
         """Atomically add/revise a batch. Existing IDs require expected_version."""
         if not isinstance(entries, list) or not entries:
             raise ValueError("memories must be a nonempty list")
-        validated = [validate_memory(m) for m in entries]
+        prepared = []
+        for raw in entries:
+            item = dict(raw)
+            old = self.memory(item["id"]) if isinstance(item.get("id"), str) else None
+            # Revising an existing lab-wide memory does not re-ask for confirm_global.
+            if old and old["project"] == GLOBAL_PROJECT and item.get("project") == GLOBAL_PROJECT:
+                item["confirm_global"] = True
+            prepared.append(item)
+        validated = [validate_memory(m) for m in prepared]
         if len({m["id"] for m in validated}) != len(validated):
             raise ValueError("Duplicate IDs in memory batch")
         output = []
@@ -196,13 +286,13 @@ class Store:
                     s = self.source(sid)
                     if not s:
                         raise ValueError(f"Missing evidence source: {sid}")
-                    if scope_key(s) != scope_key(m):
-                        raise ValueError("Memory and evidence must belong to the same project and ticket")
+                    if not scope_covers(s, m):
+                        raise ValueError("Memory and evidence must share the same project/ticket or an ancestor layer")
                 if m["quote"] and not any(m["quote"] in self.source(s)["body"] for s in m["source_ids"]):
                     raise ValueError("Evidence quote must be an exact excerpt from a linked source")
                 for ref in m["depends_on"] + m["supersedes"]:
-                    if ref not in proposed or scope_key(proposed[ref]) != scope_key(m):
-                        raise ValueError(f"Missing or cross-project/ticket memory reference: {ref}")
+                    if ref not in proposed or not scope_covers(proposed[ref], m):
+                        raise ValueError(f"Missing or cross-scope memory reference: {ref}")
                 old = existing.get(m["id"])
                 expected = m.pop("expected_version", None)
                 if old and scope_key(old) != scope_key(m):

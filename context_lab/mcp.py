@@ -7,13 +7,13 @@ import json
 import sys
 
 from .engine import compile_context
-from .knowledge import initiate
-from .store import scope_key
+from .knowledge import allocate_ticket, initiate
+from .store import scope_covers, scope_key
 
 
 TASK = {"type": "object", "properties": {
     "query": {"type": "string"}, "project": {"type": "string"},
-    "ticket": {"type": "string", "description": "Exact ticket ID; omit for project-only context. Other tickets are excluded."},
+    "ticket": {"type": "string", "description": "Exact ticket ID; omit for project baseline. Retrieval also includes project baseline and sparse lab-wide (__global__) memories. Other tickets stay excluded."},
     "actions": {"type": "array", "items": {"type": "string"}},
     "needs": {"type": "array", "items": {"type": "string"}},
     "state": {"type": "object"}, "as_of": {"type": "string"}}, "required": ["query", "project"]}
@@ -26,19 +26,23 @@ def tool(name, description, properties, required, read_only=True):
 
 
 TOOLS = [
-    tool("memory_initiate", "Check or initialize a project/ticket knowledge base. Call with project/ticket first: existing setup returns already_initialized. Otherwise ask for a local notes folder (path) or empty=true. Categorizes and indexes Markdown/text locally. Repeat calls reuse setup; refresh=true explicitly rescans. Never edits the notes.",
+    tool("memory_initiate", "Check or initialize a project/ticket knowledge base. Call with project/ticket first: existing setup returns already_initialized. Otherwise ask for a local notes folder (path) or empty=true. Categorizes and indexes Markdown/text locally; session journals under Cl/ are never indexed. Repeat calls reuse setup; refresh=true explicitly rescans. Never edits the notes.",
          {"project": {"type": "string"}, "ticket": {"type": "string"}, "path": {"type": "string"},
           "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}}, ["project"], False),
+    tool("memory_allocate_ticket", "Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC) when the user wants Obsidian notes and memories but has no ticket yet.",
+         {}, []),
     tool("memory_catalog", "List the supported task actions and information needs. Use these to describe your next decision.", {}, []),
-    tool("memory_context", "Build task-targeted context. Supply current state and actions where known. Reports unresolved evidence needs. Read source evidence before assuming a conditional lesson applies. Does not prove task sufficiency.",
+    tool("memory_context", "Build task-targeted context from layered scopes: lab-wide (__global__), then project baseline (empty ticket), then the exact ticket. Sibling tickets never mix. Supply current state and actions where known. Reports unresolved evidence needs. Read source evidence before assuming a conditional lesson applies. Does not prove task sufficiency.",
          {"task": TASK, "budget": {"type": "integer", "minimum": 128, "maximum": 16000}}, ["task"], False),
-    tool("memory_source", "Read an immutable evidence source by ID within the specified project.",
+    tool("memory_source", "Read an immutable evidence source by ID. Allowed when the source is in the task scope or an ancestor layer (lab-wide / project baseline).",
          {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"]),
-    tool("memory_observe", "Record a source observation. This stores evidence only; it does not create a confirmed lesson.",
-         {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}}, ["project", "title", "body"], False),
+    tool("memory_observe", "Record a source observation. This stores evidence only; it does not create a confirmed lesson. For lab-wide standing rules use project=__global__ with empty ticket and confirm_global=true only after the user explicitly approves; keep those sparse.",
+         {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"},
+          "confirm_global": {"type": "boolean", "description": "Required true when project is __global__; only after explicit user approval."}},
+         ["project", "title", "body"], False),
     tool("memory_extract", "Explicitly send one saved observation (max 4000 UTF-8 bytes) to local Mem0/Ollama. Persists extracted facts as candidates in the same project/ticket for human review; they cannot affect retrieval until confirmed. Repeat calls reuse extracted records. No cloud service or vault-wide ingestion.",
          {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"], False),
-    tool("memory_propose", "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. Each needs an existing evidence source.",
+    tool("memory_propose", "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. Each needs an existing evidence source. Lab-wide candidates need project=__global__, empty ticket, and confirm_global=true after explicit user approval; keep them sparse.",
          {"memories": {"type": "array", "items": {"type": "object"}}}, ["memories"], False),
     tool("memory_feedback", "Record reported helpful, missed, irrelevant or stale memory and diagnose the pipeline stage from a run snapshot. Feedback is not verified ground truth and does not auto-promote lessons.",
          {"run_id": {"type": "string"}, "memory_id": {"type": "string"},
@@ -50,6 +54,8 @@ TOOLS = [
 def call(store, name, args):
     if name == "memory_initiate":
         return initiate(store, **args)
+    if name == "memory_allocate_ticket":
+        return {"ticket": allocate_ticket()}
     if name == "memory_catalog":
         from .engine import catalog
         return catalog()
@@ -58,8 +64,8 @@ def call(store, name, args):
         return {k: p[k] for k in ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps")}
     if name == "memory_source":
         s = store.source(args["source_id"])
-        if not s or scope_key(s) != scope_key(args):
-            raise ValueError("Source not found in this project/ticket")
+        if not s or not scope_covers(s, args):
+            raise ValueError("Source not found in this project/ticket or an ancestor layer")
         return s
     if name == "memory_observe":
         return store.add_source(args)

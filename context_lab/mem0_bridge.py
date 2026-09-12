@@ -11,7 +11,7 @@ import uuid
 from urllib.request import urlopen
 
 from .engine import ROOT
-from .store import scope_key
+from .store import GLOBAL_PROJECT, scope_key
 
 
 def identity(source):
@@ -22,9 +22,40 @@ def identity(source):
             "run_id": "source-" + digest([source["id"], source["sha256"]])}
 
 
+def lab_wide_identity():
+    return identity({"project": GLOBAL_PROJECT, "ticket": "", "id": "lab-wide", "sha256": "lab-wide"})
+
+
 def source_metadata(source):
     return {"project": source["project"], "ticket": source["ticket"],
             "source_id": source["id"], "source_sha256": source["sha256"]}
+
+
+def sync_lab_wide(store):
+    """Best-effort: mirror confirmed lab-wide claims into local Mem0 under the global identity.
+
+    Called at Context Lab startup. Missing Ollama/venv is a no-op; Context Lab retrieval
+    already loads __global__ via scope layers regardless of Mem0.
+    """
+    memories = [m for m in store.memories(project=GLOBAL_PROJECT, ticket="") if m["status"] == "confirmed"]
+    if not memories or store.path == ":memory:":
+        return {"status": "skipped", "reason": "empty_or_memory_db"}
+    data = Path(store.path).resolve().with_name(Path(store.path).name + ".mem0")
+    python = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    payload = {"mode": "sync_lab_wide", "data": str(data),
+               "claims": [{"id": m["id"], "claim": m["claim"], "title": m["title"]} for m in memories]}
+    try:
+        result = subprocess.run([str(python) if python.exists() else sys.executable,
+                                 "-m", "context_lab.mem0_bridge"], cwd=ROOT,
+                                input=json.dumps(payload), capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return {"status": "skipped", "reason": "mem0_unavailable"}
+    if result.returncode:
+        return {"status": "skipped", "reason": "mem0_worker_failed"}
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"status": "skipped", "reason": "invalid_response"}
 
 
 def extract(store, source_id, project, ticket=""):
@@ -89,6 +120,51 @@ def extract(store, source_id, project, ticket=""):
             "note": "Only reviewed, confirmed memories affect retrieval. Empty output is not proof that nothing was worth remembering."}
 
 
+def local_sync_lab_wide(data, claims):
+    os.environ["MEM0_TELEMETRY"] = "false"
+    os.environ["MEM0_DIR"] = str(data)
+    try:
+        from mem0 import Memory
+    except ImportError as e:
+        raise ValueError("Install mem0ai==2.0.20 and ollama==0.6.2 in the repository's .venv; see README") from e
+    base = "http://127.0.0.1:11434"
+    with urlopen(base + "/api/tags", timeout=5) as response:
+        installed = {m["name"] for m in json.load(response)["models"]}
+    missing = {"qwen3:4b", "embeddinggemma:300m"} - installed
+    if missing:
+        raise ValueError("Pull these Ollama models first: " + ", ".join(sorted(missing)))
+    data = Path(data)
+    data.mkdir(parents=True, exist_ok=True)
+    memory = Memory.from_config({
+        "llm": {"provider": "ollama", "config": {
+            "model": "qwen3:4b", "ollama_base_url": base, "temperature": 0.1, "max_tokens": 2000}},
+        "embedder": {"provider": "ollama", "config": {
+            "model": "embeddinggemma:300m", "ollama_base_url": base, "embedding_dims": 768}},
+        "vector_store": {"provider": "qdrant", "config": {
+            "collection_name": "context_lab_mem0", "path": str(data / "qdrant"),
+            "embedding_model_dims": 768, "on_disk": True}},
+        "history_db_path": str(data / "history.sqlite3"),
+    })
+    memory.llm.client.chat = partial(memory.llm.client.chat, think=False)
+    ids = lab_wide_identity()
+    try:
+        existing = memory.get_all(filters={"user_id": ids["user_id"]}, top_k=200).get("results") or []
+        known = {row.get("metadata", {}).get("memory_id") for row in existing if isinstance(row.get("metadata"), dict)}
+        added = 0
+        for claim in claims:
+            if claim["id"] in known:
+                continue
+            memory.add(claim["claim"], user_id=ids["user_id"], run_id="lab-wide-" + claim["id"],
+                       metadata={"project": GLOBAL_PROJECT, "ticket": "", "memory_id": claim["id"],
+                                 "title": claim.get("title", "")},
+                       prompt="Store this lab-wide standing rule exactly. Do not invent related rules.")
+            added += 1
+        return {"status": "synced", "added": added, "total": len(claims)}
+    finally:
+        memory.close()
+        memory.vector_store.client.close()
+
+
 def local_extract(source, data):
     os.environ["MEM0_TELEMETRY"] = "false"
     os.environ["MEM0_DIR"] = str(data)
@@ -137,7 +213,10 @@ if __name__ == "__main__":
     try:
         request = json.load(sys.stdin)
         with contextlib.redirect_stdout(sys.stderr):
-            output = local_extract(request["source"], request["data"])
+            if request.get("mode") == "sync_lab_wide":
+                output = local_sync_lab_wide(request["data"], request.get("claims") or [])
+            else:
+                output = local_extract(request["source"], request["data"])
     except Exception as e:
         output = {"error": f"Local Mem0: {e}. Evidence is unchanged. If the store is busy, retry when the other extraction finishes."}
     print(json.dumps(output))

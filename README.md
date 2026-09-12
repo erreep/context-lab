@@ -194,10 +194,13 @@ facts or lessons and do not count as declared-need coverage. Original evidence
 snapshots remain available after refresh. Learned lessons still require review.
 
 Pass `ticket` alongside `project` in context tasks, source reads, observations and
-proposed memories. All retrieval strategies filter by this exact scope before
-ranking, conflict checks and dependency traversal. Omitting `ticket` means
-project-only records, **not all tickets**; project-only material is not implicitly
-shared into a ticket. Choose only the folder you want available for that ticket.
+proposed memories. Retrieval layers scopes: sparse **lab-wide** (`project=__global__`,
+no ticket) → **project baseline** (empty ticket) → **exact ticket**. Sibling tickets
+never mix. Omitting `ticket` means project baseline only (plus lab-wide), **not all
+tickets**. Lab-wide standing rules are rare: agents must ask the user and pass
+`confirm_global=true` before writing them; they load into every `memory_context`
+and are best-effort synced into local Mem0 on `python3 start.py`. Choose only the
+folder you want available for that ticket.
 The UI's saved-knowledge-base selector fills both fields for context previews.
 Use a separate agent conversation per ticket to avoid carrying old chat messages.
 
@@ -284,6 +287,26 @@ python3 -m context_lab context --task examples/task.json --model-planner --embed
 Drafting returns candidate JSON without saving it. Exact source excerpts are checked;
 review the scope, assumptions and exceptions before importing. No reward learning,
 automatic promotion or background distillation scheduler is running.
+
+## Optional Docker-free Mem0 sandbox
+
+Mem0 is not required by Context Lab and uses a separate store. To try its automatic
+extraction locally without changing Context Lab's dependency-free default:
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull embeddinggemma:300m
+ollama pull qwen3:4b
+uv venv --python 3.11 .venv
+uv pip install --python .venv/bin/python mem0ai==2.0.20 ollama==0.6.2
+.venv/bin/python examples/mem0_local.py
+```
+
+The example disables Mem0 telemetry and keeps its embedded Qdrant vectors and history
+under `workspace/mem0`; no Qdrant server or Docker container runs. Ollama normally
+unloads idle models after five minutes. Unload them immediately with
+`ollama stop qwen3:4b` and `ollama stop embeddinggemma:300m`.
 
 ## Connect local Mem0 to Context Lab
 
