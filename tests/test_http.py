@@ -53,6 +53,10 @@ class HTTPTests(unittest.TestCase):
     def test_page_and_example_picker(self):
         page = self.request("/")
         self.assertIn("Context Lab", page)
+        self.assertNotIn('<option value="__global__"', page)
+        self.assertIn('id="layer-stack"', page)
+        self.assertIn("Lab rules", page)
+        self.assertNotIn("Give the next decision", page)
         cases = self.request("/api/scenarios")["cases"]
         self.assertEqual(len(cases), 28)
         self.assertTrue(all("expected" not in c for c in cases))

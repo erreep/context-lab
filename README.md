@@ -23,18 +23,24 @@ The launcher seeds an empty database with the fictional Fieldnote project. It ne
 overwrites existing records. Data is saved locally to `workspace/memory.sqlite3`.
 The server listens only on localhost. It is a local experiment, not a hosted service.
 
+The local UI is a workbench for the current project and ticket. Lab-wide standing
+rules appear as the first layer of that workspace, not as a separate project.
+Confirm candidates on the review desk. Preview what an agent would receive from
+Agent preview. Lab tools hold standing-rule writes, benchmark, and export.
+
 ## Try these five things
 
-1. **Context builder → Background uploads after reconnect.** Compare what each arm
-   retrieves. Expand “Why this memory?” and “records left out.” The targeted arm
-   brings the offline constraint and the complete duplicate-prevention evidence.
+1. **Agent preview → Background uploads after reconnect.** Choose the scenario, then
+   Preview context. Expand “Why these records?” Compare methods shows the other two
+   arms. Targeted brings the offline constraint and the complete duplicate-prevention
+   evidence.
 2. **Duplicate prevention already verified.** Watch a formerly useful lesson become
    inapplicable. Unknown state is handled differently from a known exception.
 3. **Team sharing changes an assumption.** The old architecture decision is retained,
    but its single-device assumption is flagged for reconsideration. The access policy
    remains missing instead of being invented.
 4. **Conflicting retention records.** Neither contradictory value is treated as settled.
-5. **Benchmark → Run comparison suite.** Inspect every case, including the two
+5. **Lab → Benchmark.** Run the comparison suite. Inspect every case, including the two
    paraphrases the starter task rules miss. “Agent supplies task features” shows the
    intended integration path for such wording.
 
