@@ -46,6 +46,7 @@ def main():
     extract.add_argument("--project", required=True)
     extract.add_argument("--ticket", default="")
     sub.add_parser("mcp", help="Start the stdio MCP server")
+    sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
     args = parser.parse_args()
     store = Store(args.db)
     try:
@@ -60,6 +61,9 @@ def main():
         elif args.command == "mcp":
             from .mcp import serve_mcp
             serve_mcp(store)
+        elif args.command == "allocate-ticket":
+            from .knowledge import allocate_ticket
+            print(json.dumps({"ticket": allocate_ticket()}, indent=2))
         elif args.command == "import":
             data = json.loads(Path(args.file).read_text())
             if data.get("knowledge_bases"):

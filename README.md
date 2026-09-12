@@ -23,18 +23,24 @@ The launcher seeds an empty database with the fictional Fieldnote project. It ne
 overwrites existing records. Data is saved locally to `workspace/memory.sqlite3`.
 The server listens only on localhost. It is a local experiment, not a hosted service.
 
+The local UI is a workbench for the current project and ticket. Lab-wide standing
+rules appear as the first layer of that workspace, not as a separate project.
+Confirm candidates on the review desk. Preview what an agent would receive from
+Agent preview. Lab tools hold standing-rule writes, benchmark, and export.
+
 ## Try these five things
 
-1. **Context builder → Background uploads after reconnect.** Compare what each arm
-   retrieves. Expand “Why this memory?” and “records left out.” The targeted arm
-   brings the offline constraint and the complete duplicate-prevention evidence.
+1. **Agent preview → Background uploads after reconnect.** Choose the scenario, then
+   Preview context. Expand “Why these records?” Compare methods shows the other two
+   arms. Targeted brings the offline constraint and the complete duplicate-prevention
+   evidence.
 2. **Duplicate prevention already verified.** Watch a formerly useful lesson become
    inapplicable. Unknown state is handled differently from a known exception.
 3. **Team sharing changes an assumption.** The old architecture decision is retained,
    but its single-device assumption is flagged for reconsideration. The access policy
    remains missing instead of being invented.
 4. **Conflicting retention records.** Neither contradictory value is treated as settled.
-5. **Benchmark → Run comparison suite.** Inspect every case, including the two
+5. **Lab → Benchmark.** Run the comparison suite. Inspect every case, including the two
    paraphrases the starter task rules miss. “Agent supplies task features” shows the
    intended integration path for such wording.
 
@@ -194,10 +200,13 @@ facts or lessons and do not count as declared-need coverage. Original evidence
 snapshots remain available after refresh. Learned lessons still require review.
 
 Pass `ticket` alongside `project` in context tasks, source reads, observations and
-proposed memories. All retrieval strategies filter by this exact scope before
-ranking, conflict checks and dependency traversal. Omitting `ticket` means
-project-only records, **not all tickets**; project-only material is not implicitly
-shared into a ticket. Choose only the folder you want available for that ticket.
+proposed memories. Retrieval layers scopes: sparse **lab-wide** (`project=__global__`,
+no ticket) → **project baseline** (empty ticket) → **exact ticket**. Sibling tickets
+never mix. Omitting `ticket` means project baseline only (plus lab-wide), **not all
+tickets**. Lab-wide standing rules are rare: agents must ask the user and pass
+`confirm_global=true` before writing them; they load into every `memory_context`
+and are best-effort synced into local Mem0 on `python3 start.py`. Choose only the
+folder you want available for that ticket.
 The UI's saved-knowledge-base selector fills both fields for context previews.
 Use a separate agent conversation per ticket to avoid carrying old chat messages.
 
@@ -284,6 +293,26 @@ python3 -m context_lab context --task examples/task.json --model-planner --embed
 Drafting returns candidate JSON without saving it. Exact source excerpts are checked;
 review the scope, assumptions and exceptions before importing. No reward learning,
 automatic promotion or background distillation scheduler is running.
+
+## Optional Docker-free Mem0 sandbox
+
+Mem0 is not required by Context Lab and uses a separate store. To try its automatic
+extraction locally without changing Context Lab's dependency-free default:
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull embeddinggemma:300m
+ollama pull qwen3:4b
+uv venv --python 3.11 .venv
+uv pip install --python .venv/bin/python mem0ai==2.0.20 ollama==0.6.2
+.venv/bin/python examples/mem0_local.py
+```
+
+The example disables Mem0 telemetry and keeps its embedded Qdrant vectors and history
+under `workspace/mem0`; no Qdrant server or Docker container runs. Ollama normally
+unloads idle models after five minutes. Unload them immediately with
+`ollama stop qwen3:4b` and `ollama stop embeddinggemma:300m`.
 
 ## Connect local Mem0 to Context Lab
 

@@ -2,10 +2,10 @@
 import json
 import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .engine import ROOT
-from .service import dispatch, info
+from .service import dispatch, info, scopes
 from .store import Store
 
 
@@ -49,7 +49,14 @@ def serve(db_path, host="127.0.0.1", port=8765):
                 return self.send(200, {"cases": [{k: v for k, v in c.items() if k != "expected"} for c in suite["cases"]]})
             store = Store(db_path)
             try:
+                if path == "/api/scopes":
+                    return self.send(200, scopes(store))
                 if path == "/api/info":
+                    query = parse_qs(urlparse(self.path).query)
+                    if "project" in query:
+                        project = query["project"][0] if query["project"] else ""
+                        ticket = query["ticket"][0] if "ticket" in query else ""
+                        return self.send(200, info(store, project=project, ticket=ticket))
                     return self.send(200, info(store))
                 if path == "/api/export":
                     return self.send(200, store.export())

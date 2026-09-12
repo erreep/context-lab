@@ -1,82 +1,461 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Context Lab · Memory that knows when it matters</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Context Lab</title>
 <style>
-:root{--paper:#f6f5ef;--white:#fffefa;--ink:#233c35;--muted:#6b7871;--line:#dfE3da;--green:#245947;--mint:#e2eee6;--amber:#a8642d;--sand:#f6eada;--red:#a04539;--shadow:0 5px 22px #233c3506}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit}button,a,input,textarea,select{outline-offset:4px}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}button,input,select,textarea{border:1px solid var(--line);border-radius:8px}button{padding:9px 15px;background:var(--white);color:var(--ink)}button:hover:not(:disabled){border-color:#8da89a;background:#f0f5ee}button.primary{background:var(--green);border-color:var(--green);color:#fff}button.primary:hover:not(:disabled){background:#174a39}button.small{font-size:12px;padding:5px 9px}.layout{display:grid;grid-template-columns:225px minmax(0,1fr);min-height:100vh}.sidebar{padding:31px 20px;border-right:1px solid var(--line);background:#eeefe7;position:sticky;top:0;height:100vh;display:flex;flex-direction:column}.brand{font-size:23px;font-weight:720;letter-spacing:-1px;display:flex;gap:11px;align-items:center}.mark{width:30px;height:30px;border-radius:8px;background:var(--green);position:relative}.mark:after{content:"";width:13px;height:13px;position:absolute;top:7px;left:7px;border:2px solid #deead9;border-radius:50%;border-top-color:#dfa777}.version{margin:10px 0 35px 41px;font-size:11px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase}.nav{display:grid;gap:5px}.nav button{background:none;border-color:transparent;text-align:left;padding:11px 13px;border-radius:8px;font-weight:550}.nav button.active{background:var(--green);color:white}.nav .n{display:inline-block;width:28px;opacity:.65;font-size:12px}.sidebar-bottom{margin-top:auto;padding:20px 10px 0;font-size:12px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;background:#3d8462;border-radius:50%;margin-right:7px}.main{padding:34px 40px 65px;max-width:1700px;width:100%;margin:auto}.topline{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:30px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:1.8px;font-weight:700;color:var(--muted)}.status{font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid var(--line);border-radius:20px}h1{font-size:34px;font-weight:620;line-height:1.2;letter-spacing:-1.2px;margin:0 0 10px}h2{font-size:19px;letter-spacing:-.4px;margin:0 0 13px}h3{font-size:16px;margin:0 0 6px}p{margin:0 0 14px}.subtitle{color:var(--muted);max-width:780px;margin-bottom:25px}.card{border:1px solid var(--line);border-radius:13px;background:var(--white);padding:22px;box-shadow:var(--shadow)}.taskbar{display:grid;grid-template-columns:1fr 175px 150px;gap:15px;margin-bottom:16px}.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:650}.field input,.field textarea,.field select{width:100%;padding:10px 11px;background:white;color:var(--ink);font-size:14px;font-weight:400}.field textarea{resize:vertical;min-height:95px;line-height:1.5}.query{font-size:18px!important;min-height:85px!important}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}.actions .right{margin-left:auto}.hint{font-size:12px;color:var(--muted);font-weight:400}.advanced{margin-top:14px;color:var(--muted);font-size:12px}.advanced summary{cursor:pointer}.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}.advanced-grid textarea{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;min-height:95px}.section-line{display:flex;align-items:center;justify-content:space-between;margin:29px 0 13px}.section-line h2{margin:0}.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;align-items:start}.strategy{padding:0;overflow:hidden}.strategy.targeted{border-color:#739881;box-shadow:0 0 0 1px #73988120}.strategy-head{padding:20px;border-bottom:1px solid var(--line);min-height:137px}.strategy.targeted .strategy-head{background:var(--mint)}.strategy-label{font-size:10px;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted);margin-bottom:6px}.strategy-title{font-size:19px;font-weight:650;margin-bottom:8px;letter-spacing:-.5px}.metrics{display:flex;gap:20px;color:var(--muted);font-size:11px}.metrics b{font-size:18px;font-weight:650;color:var(--ink);margin-right:4px}.strategy-body{padding:17px}.memory{padding:13px 0;border-top:1px solid var(--line)}.memory:first-child{border-top:0;padding-top:0}.memory-title{font-size:13px;font-weight:680;line-height:1.45;margin-bottom:7px}.memory p{font-size:12px;color:#51665a;margin-bottom:7px}.tag{display:inline-block;padding:2px 6px;font-size:10px;border-radius:4px;background:#edf0e9;color:#567363;margin-right:5px}.tag.warn{background:var(--sand);color:var(--amber)}.tag.bad{background:#fae9e3;color:var(--red)}.tag.good{background:var(--mint);color:var(--green)}.memory details,.trace{font-size:11px;color:var(--muted);margin-top:7px}.memory summary,.trace summary{cursor:pointer}.memory ul{padding-left:17px;margin:7px 0}.source-link{border:0;background:none;padding:0;color:var(--green);font-size:11px;text-decoration:underline}.needs{margin:12px 0;padding:12px;background:#f5f5ed;border-radius:8px;font-size:11px}.needs-title{font-weight:700;margin-bottom:6px}.need{display:flex;justify-content:space-between;gap:5px;padding:3px 0}.notice{font-size:12px;color:var(--amber);background:var(--sand);padding:12px 15px;border-radius:8px;margin:15px 0}.trace-entry{border-top:1px solid var(--line);padding:8px 0;overflow-wrap:anywhere}.context{font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f0f2e9;padding:12px;border-radius:6px;max-height:440px;overflow:auto}.empty{color:var(--muted);padding:30px 15px;text-align:center;font-size:13px}.two{display:grid;grid-template-columns:1.1fr 1fr;gap:22px;align-items:start}.listing{display:grid;gap:12px}.listitem{padding:17px;border:1px solid var(--line);border-radius:9px;background:var(--white)}.listitem p{font-size:13px;color:var(--muted);margin-bottom:8px}.flex{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.spacer{flex:1}.code-input{font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace!important;min-height:360px!important;resize:vertical}.view[hidden]{display:none}.data-table{width:100%;border-collapse:collapse;font-size:12px}.data-table th{text-align:left;text-transform:uppercase;letter-spacing:1px;font-size:10px;color:var(--muted);padding:12px 10px;border-bottom:1px solid var(--line)}.data-table td{padding:13px 10px;border-bottom:1px solid var(--line);vertical-align:top}.data-table tr:last-child td{border:0}.table-wrap{overflow-x:auto}.score-number{font-size:31px;line-height:1.2;letter-spacing:-1px;margin:10px 0}.score-label{font-size:12px;color:var(--muted)}.footer-note{font-size:12px;color:var(--muted);margin-top:20px;max-width:900px}.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:17px}.toolbar input{padding:9px 12px;background:var(--white);min-width:200px}.toast{position:fixed;bottom:25px;left:50%;transform:translateX(-50%);padding:13px 20px;border-radius:10px;color:#fff;background:var(--green);z-index:99;max-width:85vw;box-shadow:0 8px 35px #0002;font-size:13px}.toast.error{background:#943f35}.toast[hidden]{display:none}dialog{max-width:760px;width:90vw;border:1px solid var(--line);border-radius:14px;background:var(--white);color:var(--ink);padding:25px;max-height:85vh}dialog::backdrop{background:#19382966}dialog pre{white-space:pre-wrap;font:14px/1.7 inherit;overflow-wrap:anywhere}dialog .mono{font:12px/1.6 ui-monospace,monospace}.check{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}.progress{display:none;width:14px;height:14px;border:2px solid #fff7;border-top-color:white;border-radius:50%;animation:spin 1s linear infinite}.busy .progress{display:inline-block}@keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:1150px){.main{padding:25px}.layout{grid-template-columns:185px 1fr}.sidebar{padding:25px 12px}.three{gap:10px}.strategy-head{padding:15px}.strategy-body{padding:12px}.taskbar{grid-template-columns:1fr 150px}.taskbar .field:last-child{grid-column:1/-1}.two{grid-template-columns:1fr}}@media(max-width:850px){.layout{display:block}.sidebar{height:auto;position:static;border-right:0;border-bottom:1px solid var(--line);padding:15px 20px}.brand{font-size:21px}.version,.sidebar-bottom{display:none}.nav{display:flex;gap:3px;margin-top:13px;overflow:auto}.nav button{white-space:nowrap;font-size:12px;padding:8px 11px}.nav .n{display:none}.main{padding:22px 17px}.topline{margin-bottom:22px}.three{grid-template-columns:1fr}.strategy-head{min-height:auto}.advanced-grid,.taskbar{grid-template-columns:1fr}.taskbar .field:last-child{grid-column:auto}h1{font-size:29px}.card{padding:17px}.strategy{padding:0}.actions .right{margin-left:0}.status{font-size:10px}.data-table{min-width:610px}}
+:root{--paper:#f6f5ef;--panel:#fffefa;--ink:#233c35;--green:#245947;--muted:#69776f;--line:#d9ded5;--soft:#edf1e9;--warn:#8a572e;--bad:#9b4037}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit;color:inherit}button,input,select,textarea{border:1px solid var(--line);border-radius:6px;background:var(--panel)}button{padding:7px 10px;cursor:pointer}button:hover:not(:disabled){border-color:#829b8d;background:var(--soft)}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:var(--green);border-color:var(--green);color:white}.danger{color:var(--bad)}.small{padding:4px 7px;font-size:11px}.quiet{border-color:transparent;background:transparent}.app-header{height:54px;display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--line);background:#eeefe7;position:sticky;top:0;z-index:10}.brand{font-size:17px;font-weight:720;letter-spacing:-.4px;margin-right:5px}.header-field{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}.header-field select{min-width:160px;padding:6px 8px}.header-actions{display:flex;gap:6px;margin-left:auto}.lab-menu{position:relative}.lab-menu[open]>summary{background:var(--soft)}.lab-menu summary{list-style:none;border:1px solid var(--line);border-radius:6px;padding:7px 10px;cursor:pointer;background:var(--panel)}.lab-menu summary::-webkit-details-marker{display:none}.lab-popover{position:absolute;right:0;top:39px;width:165px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 12px 30px #233c3520;display:grid;gap:3px}.lab-popover button{border:0;text-align:left}.workbench{display:grid;grid-template-columns:minmax(300px,.92fr) minmax(340px,1.08fr) minmax(340px,1fr);min-height:calc(100vh - 54px)}.region{padding:16px;border-right:1px solid var(--line);min-width:0}.region:last-child{border-right:0}.region-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}.region-head h1,.region-head h2{margin:0;font-size:16px;letter-spacing:-.2px}.region-head input{margin-left:auto;width:150px;padding:6px 8px}.layer{background:var(--panel);border:1px solid var(--line);border-radius:9px;margin-bottom:10px;overflow:hidden}.layer-head{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;border-bottom:1px solid var(--line)}.layer-head h2{font-size:13px;margin:0}.layer-meta{font-size:10px;color:var(--muted)}.layer-actions{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.band-title{padding:7px 11px 4px;text-transform:uppercase;letter-spacing:.9px;font-size:9px;font-weight:750;color:var(--muted)}.row{display:block;width:100%;text-align:left;border:0;border-top:1px solid #e8ebe4;border-radius:0;padding:9px 11px;background:transparent}.row:hover{background:var(--soft)}.row.selected{box-shadow:inset 3px 0 var(--green);background:#f1f5ef}.row-title{font-size:12px;font-weight:680}.row-claim{font-size:11px;color:#52645b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}.row-foot{display:flex;gap:5px;align-items:center;margin-top:5px;font-size:10px;color:var(--muted)}.pill{display:inline-block;padding:1px 5px;border-radius:9px;background:var(--soft)}.pill.candidate{background:#f4e6d6;color:var(--warn)}.pill.confirmed{background:#e1eee5;color:var(--green)}.empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px;margin-bottom:10px}.field{display:grid;gap:4px;margin-bottom:10px;font-size:11px;font-weight:650}.field input,.field textarea,.field select{width:100%;padding:7px 8px;font-weight:400}.field textarea{min-height:74px;resize:vertical;line-height:1.45}.field .claim{min-height:112px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}.actions .push{margin-left:auto}.hint{font-size:10px;color:var(--muted);font-weight:400}.notice{padding:9px 10px;background:#f4eadb;color:#76502f;border-radius:6px;font-size:11px;margin-bottom:10px}.source-body,.context{white-space:pre-wrap;overflow-wrap:anywhere;background:#f0f2e9;border-radius:6px;padding:10px;font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:330px;overflow:auto}.linked{display:grid;gap:5px}.linked button{text-align:left}.preview-form textarea{min-height:95px}.packet-head{display:flex;gap:8px;align-items:baseline}.packet-head h3{margin:0;font-size:14px}.packet-head .metric{margin-left:auto;color:var(--muted);font-size:10px}.packet-group{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}.packet-group h4{margin:0 0 5px;font-size:10px;text-transform:uppercase;letter-spacing:.8px}.packet-memory{padding:6px 0;border-top:1px solid #eceee9}.packet-memory:first-of-type{border-top:0}.packet-memory b{font-size:11px}.packet-memory p{font-size:10px;color:var(--muted);margin:2px 0}.feedback-form{display:grid;grid-template-columns:1fr auto;gap:5px;margin-top:5px}.feedback-form textarea{grid-column:1/-1;min-height:42px;padding:5px}.feedback-form select{padding:4px}.checks{margin:8px 0;padding:8px;background:var(--soft);border-radius:6px;font-size:10px}.checks p{margin:3px 0}.advanced{font-size:11px;color:var(--muted);margin-top:9px}.advanced summary{cursor:pointer;font-weight:650}.advanced-body{padding-top:8px}.advanced textarea{font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;background:var(--green);color:white;padding:9px 14px;border-radius:7px;box-shadow:0 8px 25px #0002}.toast.error{background:var(--bad)}.toast[hidden]{display:none}dialog{width:min(720px,92vw);max-height:88vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:17px}dialog::backdrop{background:#172c2666}.dialog-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}.dialog-head h2{margin:0;font-size:16px}.dialog-head button{margin-left:auto}.rules-list{display:grid;gap:6px;margin-bottom:14px}.rule-item{border:1px solid var(--line);border-radius:6px;padding:9px}.rule-item p{margin:3px 0;color:var(--muted);font-size:11px}.rule-item .actions{margin-top:5px}.confirm-claim{font-size:14px;border-left:3px solid var(--green);padding:8px 11px;background:var(--soft)}.benchmark-results{font-size:11px}.benchmark-results table{width:100%;border-collapse:collapse}.benchmark-results th,.benchmark-results td{text-align:left;padding:6px;border-bottom:1px solid var(--line)}[hidden]{display:none!important}
+@media(max-width:1100px){.workbench{grid-template-columns:1fr 1fr}.agent-preview{grid-column:1/-1;border-top:1px solid var(--line)}}@media(max-width:760px){.app-header{height:auto;position:static;flex-wrap:wrap}.header-actions{margin-left:0}.workbench{display:block}.region{border-right:0;border-bottom:1px solid var(--line)}.header-field select{min-width:120px}}
 </style>
 </head>
 <body>
-<div class="layout">
-<aside class="sidebar"><div class="brand"><span class="mark" aria-hidden="true"></span>Context Lab</div><div class="version">Experiment 0.1</div>
-<nav class="nav" aria-label="Main navigation"><button data-tab="compare" class="active"><span class="n">01</span>Context builder</button><button data-tab="benchmark"><span class="n">02</span>Benchmark</button><button data-tab="memories"><span class="n">03</span>Memories</button><button data-tab="sources"><span class="n">04</span>Evidence</button><button data-tab="feedback"><span class="n">05</span>Feedback</button></nav>
-<div class="sidebar-bottom"><p><span class="dot"></span>Runs on your machine</p><p>Evidence stays recoverable.<br>Every selection is inspectable.</p><button class="small" id="export-data">Export data</button></div></aside>
-<main class="main"><div class="topline"><span class="eyebrow">Memory that knows when it matters</span><span class="status" id="backend-status">Connecting…</span></div>
-<section class="view" id="view-compare"><h1>Give the next decision<br>the context it needs.</h1><p class="subtitle">Compare three approaches on the same task. See what was selected, what was left out, and which questions remain open.</p>
-<div class="card"><div class="taskbar"><label class="field">Start with an example<select id="scenario"><option value="">Custom task</option></select></label><label class="field">Project<input id="project" value="fieldnote" list="project-options"><datalist id="project-options"></datalist></label><label class="field">As of date<input type="date" id="as-of" value="2026-09-12"></label></div>
-<label class="field" style="margin-bottom:16px">Ticket (optional)<input id="ticket" placeholder="PROJ-123 · leave blank for project-only context"></label>
-<label class="field">Saved knowledge base<select id="knowledge-base" style="margin-bottom:16px"><option value="">Choose an initialized project/ticket…</option></select></label>
-<label class="field">What should the agent do?<textarea class="query" id="query" placeholder="Describe the task or next decision…"></textarea></label>
-<details class="advanced"><summary>Current state and task features</summary><div class="advanced-grid"><label class="field">Known current state · JSON object<textarea id="state">{}</textarea></label><label class="field">Optional agent-supplied actions and needs · JSON object<textarea id="features">{}</textarea></label></div><p class="hint" style="margin-top:8px">State is supplied by you or your agent. Unknown state remains unknown. Leave task features empty to use the starter matching rules.</p></details>
-<div class="actions"><label class="check">Budget <select id="budget"><option>400</option><option>800</option><option selected>1200</option><option>2000</option><option>4000</option></select> est. tokens</label><label class="check"><input type="checkbox" id="model-planner" disabled>Model planner</label><label class="check"><input type="checkbox" id="embeddings" disabled>Model embeddings</label><button class="primary right" id="compare-btn"><span class="progress"></span> Compare approaches ↗</button></div>
-<p class="hint" style="margin:12px 0 0" id="model-hint">Demo: synthetic evidence, authored lessons, explicit task rules. No model required.</p></div>
-<div class="section-line"><h2>Context comparison</h2><span class="hint" id="comparison-meta"></span></div><div class="three" id="comparison"><div class="empty">Choose a task and compare the approaches.</div></div>
-<p class="footer-note">“Evidence present” means a declared information need has supporting records. It does not prove that the agent has everything it needs. Token counts use a byte-based estimate.</p></section>
-<section class="view" id="view-benchmark" hidden><h1>Test the selection.</h1><p class="subtitle">28 authored cases cover implicit constraints, exceptions, changing assumptions, conflicting evidence, and task wording the starter planner misses.</p><div class="notice">Synthetic context-selection checks. These results are not agent task-success scores or independent evidence that one approach is superior.</div><div class="toolbar"><button class="primary" id="benchmark-btn">Run comparison suite</button><button id="download-report" disabled>Download detailed results</button><span class="hint">Uses the context builder’s current budget and model settings.</span></div><div id="benchmark-results"><div class="card empty">Run the suite to see measured results, including failures.</div></div></section>
-<section class="view" id="view-memories" hidden><h1>Keep the conditions.</h1><p class="subtitle">Memories link to evidence and retain their scope, assumptions, exceptions, and revision history.</p><div class="two"><div><div class="toolbar"><input id="memory-filter" placeholder="Filter memories…" aria-label="Filter memories"><button id="new-memory">New memory</button></div><div class="listing" id="memory-list"></div></div><div class="card"><h2>Review or edit a memory</h2><p class="hint">Candidates stay out of retrieval. After reviewing evidence and applicability, change <code>status</code> to <code>confirmed</code>. Existing records require the current <code>expected_version</code>.</p><label class="field">Memory JSON · one object or { "memories": […] }<textarea id="memory-editor" class="code-input" spellcheck="false"></textarea></label><div class="actions"><button class="primary" id="save-memory">Save revision</button><span class="hint" id="memory-result"></span></div><details class="advanced"><summary>Supported fields</summary><p>Required: id, project, kind, title, claim, source_ids. Optional: rationale, expected_effect, quote, valid_from, valid_until, topics, need_tags, depends_on, supersedes, assumptions, assertions, applies and unless. See README for the schema.</p><pre class="context">"applies": {"actions_any": ["sync", "retry"]},
-"unless": {"idempotency_verified": true},
-"depends_on": ["E-duplicate"]</pre></details></div></div></section>
-<section class="view" id="view-sources" hidden><h1>Start with evidence.</h1><p class="subtitle">Paste a real observation or session excerpt. Sources are immutable; lessons remain separate and revisable.</p><div class="two"><div class="listing" id="source-list"></div><div class="card"><h2>Add an observation</h2><label class="field">Project<input id="source-project" value="fieldnote"></label><label class="field" style="margin-top:12px">Ticket (optional)<input id="source-ticket" placeholder="PROJ-123"></label><label class="field" style="margin-top:12px">Title<input id="source-title" placeholder="What happened?"></label><label class="field" style="margin-top:12px">Source text<textarea id="source-body" style="min-height:220px" placeholder="Paste the original evidence, including outcome and conditions…"></textarea></label><div class="actions"><button class="primary" id="save-source">Save evidence</button></div><p class="hint" id="source-result" style="margin-top:12px"></p><div class="notice">Optional model drafting sends the selected source to your configured endpoint. Drafts include exact source excerpts and require review before use.</div></div></div></section>
-<section class="view" id="view-feedback" hidden><h1>Find the failure.</h1><p class="subtitle">Record a missed, irrelevant, stale, or helpful memory. The run snapshot helps locate the issue without treating a report as verified ground truth.</p><div class="two"><div class="listing" id="feedback-list"></div><div class="card"><h2>Report an observation</h2><label class="field">Run<select id="feedback-run"><option value="">Compare a task first</option></select></label><label class="field" style="margin-top:12px">Memory ID<input id="feedback-memory" placeholder="For example, L-operation"></label><label class="field" style="margin-top:12px">Observation<select id="feedback-observation"><option value="missed">Should have recalled this</option><option value="irrelevant">This was irrelevant</option><option value="stale">This was outdated or did not apply</option><option value="helpful">This helped</option></select></label><label class="field" style="margin-top:12px">What actually happened?<textarea id="feedback-note" placeholder="Describe the observed behavior or correction…"></textarea></label><div class="actions"><button class="primary" id="save-feedback">Record feedback</button></div><p class="hint" style="margin-top:12px">Feedback creates a diagnostic record. It does not automatically rewrite memories or become a benchmark answer key.</p></div></div></section>
-</main></div>
-<dialog id="detail-dialog"><div class="flex"><h2 id="dialog-title"></h2><span class="spacer"></span><button id="close-dialog" aria-label="Close detail">Close</button></div><pre id="dialog-body"></pre></dialog>
+<header class="app-header">
+  <div class="brand">Context Lab</div>
+  <label class="header-field">Project <select id="project-select" aria-label="Project"><option value="">Loading</option></select></label>
+  <label class="header-field">Ticket <select id="ticket-select" aria-label="Ticket"><option value="">Project defaults</option></select></label>
+  <button class="small quiet" id="new-project">New project</button>
+  <button class="small quiet" id="new-ticket">New ticket</button>
+  <div class="header-actions">
+    <details class="lab-menu" id="lab-menu"><summary>Lab</summary><div class="lab-popover">
+      <button id="open-standing">Standing rules</button>
+      <button id="open-benchmark">Benchmark</button>
+      <button id="export-data">Export</button>
+    </div></details>
+  </div>
+</header>
+<main class="workbench">
+  <section class="region layer-stack" id="layer-stack" aria-labelledby="layers-title">
+    <div class="region-head"><h1 id="layers-title">Layer stack</h1><input id="layer-filter" type="search" placeholder="Filter all layers" aria-label="Filter all layers"></div>
+    <div id="layers"><section class="layer"><div class="layer-head"><h2>Lab rules</h2></div><div class="empty">Loading layers</div></section></div>
+  </section>
+  <section class="region review-desk" id="review-desk" aria-labelledby="review-title">
+    <div class="region-head"><h2 id="review-title">Review desk</h2></div>
+    <div id="desk"><div class="card empty">Select a memory or evidence record.</div></div>
+  </section>
+  <aside class="region agent-preview" id="agent-preview" aria-labelledby="preview-title">
+    <div class="region-head"><h2 id="preview-title">Agent preview</h2></div>
+    <div class="card preview-form">
+      <label class="field">Scenario <select id="scenario"><option value="">Custom task</option></select></label>
+      <label class="field">Query <textarea id="query" placeholder="What should the agent do?"></textarea></label>
+      <div class="form-grid">
+        <label class="field">As of <input type="date" id="as-of"></label>
+        <label class="field">Budget <select id="budget"><option>400</option><option>800</option><option selected>1200</option><option>2000</option><option>4000</option></select></label>
+      </div>
+      <details class="advanced"><summary>Task details</summary><div class="advanced-body">
+        <label class="field">State JSON <textarea id="task-state">{}</textarea></label>
+        <label class="field">Actions JSON <textarea id="task-actions">[]</textarea></label>
+        <label class="field">Needs JSON <textarea id="task-needs">[]</textarea></label>
+        <label><input type="checkbox" id="model-planner" disabled> Model planner</label>
+        <label><input type="checkbox" id="embeddings" disabled> Embeddings</label>
+      </div></details>
+      <div class="actions"><button class="primary push" id="preview-button">Preview context</button></div>
+    </div>
+    <div id="preview-result"><div class="card empty">Build a targeted context packet.</div></div>
+  </aside>
+</main>
+
+<dialog id="standing-dialog">
+  <div class="dialog-head"><h2>Standing rules</h2><button data-close="standing-dialog">Close</button></div>
+  <div class="notice">These memories apply to every project and ticket. Keep lab rules sparse.</div>
+  <div class="rules-list" id="standing-list"></div>
+  <details id="global-source-details"><summary>Add evidence</summary><form class="card" id="global-source-form">
+    <label class="field">Title <input name="title" required></label>
+    <label class="field">Original observation <textarea name="body" required></textarea></label>
+    <div class="actions"><button class="primary" type="submit">Apply to every project</button></div>
+  </form></details>
+  <details id="global-memory-details"><summary>Add candidate</summary><form class="card memory-form" id="global-memory-form">
+    <input type="hidden" name="id"><input type="hidden" name="version">
+    <label class="field">Title <input name="title" required></label>
+    <label class="field">Claim <textarea class="claim" name="claim" required></textarea></label>
+    <div class="form-grid"><label class="field">Kind <select name="kind"><option>constraint</option><option>fact</option><option>decision</option><option>event</option><option>lesson</option></select></label><label class="field">Status <select name="status"><option>candidate</option><option>confirmed</option><option>retracted</option></select></label></div>
+    <label class="field">Evidence links <input name="source_ids" placeholder="src-one, src-two" required></label>
+    <details class="advanced"><summary>Conditions and rationale</summary><div class="advanced-body">
+      <label class="field">Actions any JSON <textarea name="actions_any">[]</textarea></label>
+      <label class="field">State equals JSON <textarea name="state_equals">{}</textarea></label>
+      <label class="field">Unless JSON <textarea name="unless">{}</textarea></label>
+      <label class="field">Assumptions JSON <textarea name="assumptions">{}</textarea></label>
+      <label class="field">Assertions JSON <textarea name="assertions">{}</textarea></label>
+      <label class="field">Rationale <textarea name="rationale"></textarea></label>
+      <label class="field">Expected effect <textarea name="expected_effect"></textarea></label>
+    </div></details>
+    <div class="actions"><button class="primary" type="submit">Apply to every project</button><button type="button" id="clear-global-form">Clear</button></div>
+  </form></details>
+</dialog>
+
+<dialog id="global-confirm-dialog">
+  <div class="dialog-head"><h2>Apply this standing rule to every project?</h2></div>
+  <p class="confirm-claim" id="global-confirm-claim"></p>
+  <p class="hint">This write affects every project and ticket.</p>
+  <div class="actions"><button id="cancel-global">Cancel</button><button class="primary push" id="approve-global">Apply lab-wide</button></div>
+</dialog>
+
+<dialog id="benchmark-dialog">
+  <div class="dialog-head"><h2>Benchmark</h2><button data-close="benchmark-dialog">Close</button></div>
+  <div class="notice">Synthetic context-selection checks. Results are not agent task-success scores.</div>
+  <div class="actions"><button class="primary" id="run-benchmark">Run benchmark</button></div>
+  <div class="benchmark-results" id="benchmark-results"></div>
+</dialog>
+
+<dialog id="scenario-dialog">
+  <div class="dialog-head"><h2>Switch workspace for scenario?</h2></div>
+  <p id="scenario-target"></p>
+  <div class="actions"><button id="cancel-scenario">Cancel</button><button class="primary push" id="approve-scenario">Switch workspace and fill</button></div>
+</dialog>
+
+<dialog id="history-dialog">
+  <div class="dialog-head"><h2 id="history-title">Revision history</h2><button data-close="history-dialog">Close</button></div>
+  <pre class="context" id="history-body"></pre>
+</dialog>
+
 <div class="toast" id="toast" role="status" hidden></div>
 <script>
 const $=id=>document.getElementById(id);
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const names={retrieval:'Retrieve facts',lessons:'Add lessons',targeted:'Check applicability'};
-const descriptions={retrieval:'A · Baseline',lessons:'B · Experience memory',targeted:'C · Targeted context'};
-let appInfo={},scenarios=[],packets=[],report=null,toastTimer;
-function toast(message,error=false){$('toast').textContent=message;$('toast').className='toast'+(error?' error':'');$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,error?10000:4500)}
-async function api(path,payload){const response=await fetch('/api/'+path,payload===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let body;try{body=await response.json()}catch(e){throw new Error('The local server returned an unreadable response.')}if(!response.ok)throw new Error(body.error||'Request failed');return body}
-async function busy(button,fn){button.disabled=true;button.classList.add('busy');try{return await fn()}catch(e){toast(e.message,true)}finally{button.disabled=false;button.classList.remove('busy')}}
-function tab(name){document.querySelectorAll('.view').forEach(el=>el.hidden=el.id!=='view-'+name);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name))}
-function showDialog(title,text){$('dialog-title').textContent=title;$('dialog-body').textContent=text;$('detail-dialog').showModal()}
-function download(filename,data,mime='application/json'){const blob=new Blob([typeof data==='string'?data:JSON.stringify(data,null,2)],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function settings(){return{budget:Number($('budget').value),embeddings:$('embeddings').checked,model_planner:$('model-planner').checked}}
-function taskInput(){const features=JSON.parse($('features').value||'{}');if(!features||Array.isArray(features)||typeof features!=='object')throw new Error('Task features must be a JSON object.');const extra={};for(const key of ['actions','needs'])if(key in features)extra[key]=features[key];return{query:$('query').value,project:$('project').value,ticket:$('ticket').value,as_of:$('as-of').value,state:JSON.parse($('state').value||'{}'),...extra}}
-function fillScenario(id){const c=scenarios.find(c=>c.id===id);if(!c)return;const t=c.task;$('query').value=t.query;$('project').value=t.project;$('ticket').value=t.ticket||'';$('knowledge-base').value='';$('as-of').value=t.as_of;$('state').value=JSON.stringify(t.state||{},null,2);const features={};for(const k of ['actions','needs'])if(k in t)features[k]=t[k];$('features').value=JSON.stringify(features,null,2)}
-function tag(text,type=''){return'<span class="tag '+type+'">'+esc(text)+'</span>'}
-function memoryCard(m){return'<div class="memory"><div class="memory-title">'+esc(m.title)+'</div><p>'+esc(m.claim)+'</p>'+tag(m.id)+tag(m.kind)+(m.category?tag(m.category):'')+(m.applicability==='conditional'?tag('Check conditions','warn'):'')+'<details><summary>Why this memory?</summary><ul>'+m.selection_reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul>'+(m.rationale?'<p><b>Reason:</b> '+esc(m.rationale)+'</p>':'')+(m.expected_effect?'<p><b>Expected effect:</b> '+esc(m.expected_effect)+'</p>':'')+'<p>Evidence: '+m.source_ids.map(id=>'<button class="source-link" data-source="'+esc(id)+'">'+esc(id)+'</button>').join(', ')+'</p></details></div>'}
-function renderPacket(p){const selected=p.selected.map(memoryCard).join('')||'<div class="empty">No memories selected.</div>';const statuses=p.needs.map(n=>'<div class="need"><span>'+esc(n.need)+'</span>'+tag(n.status,n.status==='evidence_present'?'good':n.status==='conflicted'?'bad':'warn')+'</div>').join('')||'<span class="hint">No declared needs. Completeness is not assessed.</span>';const trace=p.trace.filter(t=>t.stage!=='selected');return'<article class="card strategy '+p.strategy+'"><div class="strategy-head"><div class="strategy-label">'+descriptions[p.strategy]+'</div><div class="strategy-title">'+names[p.strategy]+'</div><div class="metrics"><span><b>'+p.selected.length+'</b>memories</span><span><b>'+p.estimated_tokens+'</b>est. tokens</span></div></div><div class="strategy-body">'+selected+'<div class="needs"><div class="needs-title">Declared evidence needs</div>'+statuses+'</div>'+(p.warnings.length?'<p class="hint">'+p.warnings.map(esc).join('<br>')+'</p>':'')+'<details class="trace"><summary>'+trace.length+' records left out · inspect decisions</summary>'+trace.map(t=>'<div class="trace-entry"><b>'+esc(t.id)+'</b> '+tag(t.stage)+'<br>'+t.reasons.map(esc).join('<br>')+'</div>').join('')+'</details><details class="trace"><summary>Agent-ready context</summary><pre class="context">'+esc(p.context)+'</pre></details><div class="actions"><button class="small" data-download="'+p.strategy+'">Download context</button><button class="small" data-report="'+p.strategy+'">Give feedback</button></div></div></article>'}
-function renderComparison(){ $('comparison').innerHTML=packets.map(renderPacket).join('');const p=packets[0];$('comparison-meta').textContent=p?p.task.actions.join(' · ')||'No action recognized':'';$('feedback-run').innerHTML=packets.map(p=>'<option value="'+esc(p.run_id)+'">'+esc(names[p.strategy])+' · '+esc(p.run_id)+'</option>').join('')}
-async function compareNow(){await busy($('compare-btn'),async()=>{const result=await api('compare',{task:taskInput(),...settings()});packets=result.packets;renderComparison()})}
-function renderMemories(){const filter=$('memory-filter').value.toLowerCase();$('memory-list').innerHTML=(appInfo.memories||[]).filter(m=>JSON.stringify(m).toLowerCase().includes(filter)).map(m=>'<article class="listitem"><div class="flex"><h3>'+esc(m.title)+'</h3><span class="spacer"></span>'+tag(m.status,m.status==='candidate'?'warn':'')+'</div><p>'+esc(m.claim)+'</p><div class="flex">'+tag(m.id)+tag(m.project)+(m.ticket?tag(m.ticket):'')+tag('v'+m.version)+'<span class="spacer"></span><button class="small" data-edit="'+esc(m.id)+'">Edit</button><button class="small" data-history="'+esc(m.id)+'">History</button></div></article>').join('')||'<div class="card empty">No memories match.</div>'}
-function renderSources(){$('source-list').innerHTML=(appInfo.sources||[]).map(s=>'<article class="listitem"><h3>'+esc(s.title)+'</h3><p>'+esc(s.body.slice(0,180))+(s.body.length>180?'…':'')+'</p><div class="flex">'+tag(s.id)+tag(s.project)+(s.ticket?tag(s.ticket):'')+'<span class="spacer"></span><button class="small" data-source="'+esc(s.id)+'">Read source</button><button class="small" data-draft="'+esc(s.id)+'" '+(!appInfo.model_available?'disabled':'')+'>Draft lessons</button><button class="small" data-mem0="'+esc(s.id)+'" title="Send this observation to local Mem0/Ollama and save candidates for review">Extract with local Mem0</button></div></article>').join('')||'<div class="card empty">Add your first source.</div>'}
-function renderFeedback(){$('feedback-list').innerHTML=(appInfo.feedback||[]).map(f=>'<article class="listitem"><div class="flex"><h3>'+esc(f.memory_id)+'</h3>'+tag(f.observation)+'</div><p>'+esc(f.note||'No additional note.')+'</p>'+tag(f.diagnosis,'warn')+'<p class="hint" style="margin-top:8px">Reported, not verified · '+esc(f.run_id)+'</p></article>').join('')||'<div class="card empty">No feedback yet. Compare a task, then record what helped or was missed.</div>'}
-async function refresh(){appInfo=await api('info');$('knowledge-base').innerHTML='<option value="">Choose an initialized project/ticket…</option>'+(appInfo.knowledge_bases||[]).map((b,i)=>'<option value="'+i+'">'+esc(b.project+(b.ticket?' / '+b.ticket:' / Project only')+' · '+b.note_count+' notes')+'</option>').join('');$('project-options').innerHTML=appInfo.projects.map(p=>'<option value="'+esc(p)+'">').join('');$('backend-status').textContent=appInfo.memories.length+' memories · '+appInfo.sources.length+' sources';$('model-planner').disabled=!appInfo.model_available;$('embeddings').disabled=!appInfo.embeddings_available;if(appInfo.model_available||appInfo.embeddings_available)$('model-hint').textContent='Model features send task or memory text to your configured endpoint only when selected.';renderMemories();renderSources();renderFeedback()}
-function newMemory(){ $('memory-editor').value=JSON.stringify({id:'M-'+Date.now().toString(36),project:$('project').value||'fieldnote',ticket:$('ticket').value,kind:'lesson',title:'',claim:'',status:'candidate',source_ids:[],applies:{actions_any:[]},need_tags:[],rationale:'',expected_effect:''},null,2);$('memory-result').textContent='New candidate'; }
-function editMemory(id){const m=structuredClone(appInfo.memories.find(x=>x.id===id));if(!m)return;m.expected_version=m.version;delete m.version;delete m.recorded_at;$('memory-editor').value=JSON.stringify(m,null,2);$('memory-result').textContent='Editing '+id;tab('memories')}
-function renderBenchmark(){const summaries=Object.entries(report.summary);let html='<div class="three">'+summaries.map(([arm,m])=>'<div class="card"><div class="strategy-label">'+descriptions[arm]+'</div><h2>'+names[arm]+'</h2><div class="score-number">'+m.context_cases_passed+'<span style="font-size:17px;color:var(--muted)"> / '+m.cases+'</span></div><p class="score-label">Context cases passed</p><div class="needs"><div class="need">Required record recall <b>'+Math.round(m.required_recall*100)+'%</b></div><div class="need">Selection precision <b>'+Math.round(m.selection_precision*100)+'%</b></div><div class="need">Forbidden inclusions <b>'+m.forbidden_inclusions+'</b></div><div class="need">Mean estimated tokens <b>'+m.mean_estimated_tokens+'</b></div></div></div>').join('')+'</div><div class="section-line"><h2>Every case, including the misses</h2><span class="hint">Budget: '+report.budget+' estimated tokens</span></div><div class="card table-wrap"><table class="data-table"><thead><tr><th>Case</th><th>Category</th><th>Facts</th><th>+ Lessons</th><th>Targeted</th><th></th></tr></thead><tbody>';for(const c of report.cases){html+='<tr><td>'+esc(c.id)+' · '+esc(c.label)+'</td><td>'+esc(c.category)+'</td>';for(const arm of ['retrieval','lessons','targeted']){const m=c.outcomes[arm].metrics;html+='<td>'+tag(m.context_case_pass?'Pass':'Miss',m.context_case_pass?'good':'warn')+(m.missing_ids.length?'<div class="hint">Missing '+m.missing_ids.map(esc).join(', ')+'</div>':'')+(m.forbidden_ids.length?'<div class="hint">Wrong '+m.forbidden_ids.map(esc).join(', ')+'</div>':'')+'</td>'}html+='<td><button class="small" data-case="'+esc(c.id)+'">Inspect</button></td></tr>'}html+='</tbody></table></div><p class="footer-note">'+report.limitations.map(esc).join('<br>')+'</p>';$('benchmark-results').innerHTML=html;$('download-report').disabled=false}
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.dataset.tab)tab(b.dataset.tab);if(b.dataset.source){const s=await api('source/'+encodeURIComponent(b.dataset.source));showDialog(s.title,s.body+'\n\nSource ID: '+s.id+'\nSHA-256: '+s.sha256)}if(b.dataset.edit)editMemory(b.dataset.edit);if(b.dataset.history){const r=await api('revisions/'+encodeURIComponent(b.dataset.history));showDialog('Revision history · '+b.dataset.history,JSON.stringify(r.revisions,null,2))}if(b.dataset.download){const p=packets.find(p=>p.strategy===b.dataset.download);download('context-'+p.strategy+'.txt',p.context,'text/plain')}if(b.dataset.report){const p=packets.find(p=>p.strategy===b.dataset.report);$('feedback-run').value=p.run_id;tab('feedback')}if(b.dataset.draft)await busy(b,async()=>{const draft=await api('draft',{source_id:b.dataset.draft});$('memory-editor').value=JSON.stringify({memories:draft.memories},null,2);$('memory-result').textContent='Model drafts · not saved';tab('memories');toast(draft.memories.length+' candidate lessons drafted for review')});if(b.dataset.case){$('scenario').value=b.dataset.case;fillScenario(b.dataset.case);tab('compare');await compareNow()}}catch(err){toast(err.message,true)}});
-$('knowledge-base').addEventListener('change',()=>{const value=$('knowledge-base').value;if(value==='')return;const b=appInfo.knowledge_bases[Number(value)];$('project').value=b.project;$('ticket').value=b.ticket;$('source-project').value=b.project;$('source-ticket').value=b.ticket;$('scenario').value='';$('query').value='';$('state').value='{}';$('features').value='{}';$('as-of').value=new Date().toLocaleDateString('en-CA');packets=[];renderComparison();});
-document.addEventListener('click',e=>{const b=e.target.closest('button[data-mem0]');if(!b)return;busy(b,async()=>{
- const s=appInfo.sources.find(s=>s.id===b.dataset.mem0);
- $('source-result').textContent='Extracting with local Mem0/Ollama. This can take up to three minutes; candidates require review.';
- try{const r=await api('mem0-extract',{source_id:s.id,project:s.project,ticket:s.ticket||''});await refresh();
-  $('source-result').textContent=r.created+' new candidates saved. '+r.note;
-  if(r.memories.length){$('memory-filter').value=s.id;renderMemories();editMemory(r.memories[0].id);}
-  toast(r.created+' new Mem0 candidates · '+r.memories.length+' records available for review');
- }catch(err){$('source-result').textContent=err.message;throw err;}
-});});
-$('compare-btn').addEventListener('click',compareNow);$('scenario').addEventListener('change',()=>fillScenario($('scenario').value));$('memory-filter').addEventListener('input',renderMemories);$('new-memory').addEventListener('click',newMemory);$('close-dialog').addEventListener('click',()=>$('detail-dialog').close());
-$('save-memory').addEventListener('click',()=>busy($('save-memory'),async()=>{const parsed=JSON.parse($('memory-editor').value);const entries=parsed.memories||[parsed];const result=await api('memories',{memories:entries});await refresh();if(result.memories.length===1)editMemory(result.memories[0].id);toast('Saved '+result.memories.length+' memory revision(s)')}));
-$('save-source').addEventListener('click',()=>busy($('save-source'),async()=>{const s=await api('source',{project:$('source-project').value,ticket:$('source-ticket').value,title:$('source-title').value,body:$('source-body').value});$('source-result').textContent='Saved source '+s.id+'. Use this ID in source_ids for a new memory.';await refresh();toast('Evidence saved')}));
-$('save-feedback').addEventListener('click',()=>busy($('save-feedback'),async()=>{const result=await api('feedback',{run_id:$('feedback-run').value,memory_id:$('feedback-memory').value,observation:$('feedback-observation').value,note:$('feedback-note').value});await refresh();toast('Recorded: '+result.diagnosis)}));
-$('benchmark-btn').addEventListener('click',()=>busy($('benchmark-btn'),async()=>{report=await api('benchmark',settings());renderBenchmark()}));$('download-report').addEventListener('click',()=>download('context-lab-benchmark.json',report));$('export-data').addEventListener('click',()=>busy($('export-data'),async()=>download('context-lab-export.json',await api('export'))));
-(async()=>{try{await refresh();const result=await api('scenarios');scenarios=result.cases;$('scenario').innerHTML='<option value="">Custom task</option>'+scenarios.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.label)+'</option>').join('');$('scenario').value='01';fillScenario('01');newMemory();await compareNow()}catch(e){toast(e.message,true)}})();
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const strategyNames={targeted:'Targeted context',retrieval:'Retrieval only',lessons:'Retrieval with lessons'};
+let toastTimer;
+
+function parseProject(value){
+  const project=String(value??'').trim();
+  if(!project||project==='__global__')throw new Error('Choose a real project.');
+  return project;
+}
+function workspace(project,ticket=''){
+  project=parseProject(project);
+  ticket=String(ticket??'').trim();
+  return ticket?{kind:'ticket',project,ticket}:{kind:'baseline',project};
+}
+function sameWorkspace(a,b){return a&&b&&a.kind===b.kind&&a.project===b.project&&(a.kind==='baseline'||a.ticket===b.ticket)}
+function scopeOf(ws){return{project:ws.project,ticket:ws.kind==='ticket'?ws.ticket:''}}
+function workspaceQuery(ws){return new URLSearchParams(scopeOf(ws)).toString()}
+function layerKey(record){return record.project==='__global__'?'lab':record.ticket?'ticket':'baseline'}
+function layerLabel(key){return key==='lab'?'Lab rules':key==='baseline'?'Project defaults':'This ticket'}
+function rowAccess(memory,ws){
+  const key=layerKey(memory);
+  const own=key==='ticket'||(key==='baseline'&&ws.kind==='baseline');
+  if(!own)return{access:'inspect',memory,routeToOwner:key==='lab'?{kind:'standing-rule-governance',id:memory.id}:{kind:'project-defaults'}};
+  return{access:memory.status==='candidate'?'review':'edit',memory,expectedVersion:memory.version};
+}
+function parseCatalog(data){
+  const projects=[];
+  for(const [id,rows] of Object.entries(data?.by_project||{})){
+    if(!id||id==='__global__')continue;
+    projects.push({id,tickets:(rows||[]).filter(row=>row.ticket).map(row=>row.ticket).sort()});
+  }
+  return projects.sort((a,b)=>a.id.localeCompare(b.id));
+}
+function parseWorkbench(ws,data){
+  const allMemories=[...(data.inherited_memories||[]),...(data.memories||[])];
+  const allSources=[...(data.inherited_sources||[]),...(data.sources||[])];
+  const keys=ws.kind==='ticket'?['lab','baseline','ticket']:['lab','baseline'];
+  return{
+    workspace:ws,
+    layers:keys.map(key=>({
+      kind:key,
+      rows:allMemories.filter(item=>layerKey(item)===key).map(item=>rowAccess(item,ws)),
+      sources:allSources.filter(item=>layerKey(item)===key)
+    })),
+    feedback:data.feedback||[],
+    capabilities:{modelPlanner:!!data.model_available,embeddings:!!data.embeddings_available}
+  };
+}
+function parseComparison(data){
+  const byStrategy=Object.fromEntries((data.packets||[]).map(packet=>[packet.strategy,packet]));
+  if(!byStrategy.targeted||!byStrategy.retrieval||!byStrategy.lessons)throw new Error('Comparison response is incomplete.');
+  return{targeted:byStrategy.targeted,alternatives:[byStrategy.retrieval,byStrategy.lessons]};
+}
+function memoryRevisionWire(ws,row,patch){
+  const memory=row.memory,merged={...memory,...patch};
+  return{memories:[{id:memory.id,...scopeOf(ws),kind:merged.kind,title:merged.title,claim:merged.claim,status:merged.status,source_ids:merged.source_ids,applies:merged.applies||{},unless:merged.unless||{},assumptions:merged.assumptions||{},assertions:merged.assertions||{},rationale:merged.rationale||'',expected_effect:merged.expected_effect||'',expected_version:memory.version}]}
+}
+function sourceIds(value){return String(value||'').split(',').map(id=>id.trim()).filter(Boolean)}
+function memoryDraft(form){
+  const data=new FormData(form);
+  return{
+    id:data.get('id')||'M-'+Date.now().toString(36),
+    title:String(data.get('title')||'').trim(),
+    claim:String(data.get('claim')||'').trim(),
+    kind:data.get('kind'),
+    status:data.get('status')||'candidate',
+    source_ids:sourceIds(data.get('source_ids')),
+    applies:{actions_any:JSON.parse(data.get('actions_any')||'[]'),state_equals:JSON.parse(data.get('state_equals')||'{}')},
+    unless:JSON.parse(data.get('unless')||'{}'),
+    assumptions:JSON.parse(data.get('assumptions')||'{}'),
+    assertions:JSON.parse(data.get('assertions')||'{}'),
+    rationale:String(data.get('rationale')||''),
+    expected_effect:String(data.get('expected_effect')||'')
+  };
+}
+function globalWriteWire(intent){
+  const target={project:'__global__',ticket:'',confirm_global:true};
+  if(intent.kind==='source')return{path:'source',body:{...intent.draft,...target}};
+  const memory={...intent.draft,...target};
+  if(intent.expectedVersion)memory.expected_version=intent.expectedVersion;
+  return{path:'memories',body:{memories:[memory]}};
+}
+async function api(path,payload){
+  const response=await fetch('/api/'+path,payload===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  let body;
+  try{body=await response.json()}catch{throw new Error('The local server returned an unreadable response.')}
+  if(!response.ok)throw new Error(body.error||'Request failed.');
+  return body;
+}
+function showToast(message,error=false){
+  $('toast').textContent=message;$('toast').className='toast'+(error?' error':'');$('toast').hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,error?9000:3500);
+}
+async function refreshSnapshots(ws){
+  const [info,scopes]=await Promise.all([api('info?'+workspaceQuery(ws)),api('scopes')]);
+  shell.catalog=parseCatalog(scopes);shell.workbench=parseWorkbench(ws,info);
+}
+
+const workspacePort={
+  async open(ws){const info=await api('info?'+workspaceQuery(ws));return parseWorkbench(ws,info)},
+  async revise(ws,row,patch){await api('memories',memoryRevisionWire(ws,row,patch));await refreshSnapshots(ws)},
+  async addEvidence(ws,draft){await api('source',{...draft,...scopeOf(ws)});await refreshSnapshots(ws)},
+  async addCandidate(ws,draft){await api('memories',{memories:[{...draft,...scopeOf(ws)}]});await refreshSnapshots(ws)},
+  async preview(ws,draft){
+    const result=parseComparison(await api('compare',{task:{...draft,...scopeOf(ws)},budget:draft.budget,model_planner:draft.modelPlanner,embeddings:draft.embeddings}));
+    await refreshSnapshots(ws);return result;
+  },
+  async report(ws,draft){await api('feedback',{run_id:draft.runId,memory_id:draft.memoryId,observation:draft.observation,note:draft.note});await refreshSnapshots(ws)}
+};
+const globalGovernancePort={
+  load(){return shell.workbench.layers.find(layer=>layer.kind==='lab')},
+  async apply(intent){const request=globalWriteWire(intent);await api(request.path,request.body);await refreshSnapshots(shell.workspace)}
+};
+const shell={
+  catalog:[],workspace:null,workbench:null,selection:{kind:'none'},preview:{kind:'idle'},scenarios:[],request:0,pendingGlobal:null,pendingScenario:null,
+  next(){return++this.request},
+  async selectWorkspace(next){
+    if(sameWorkspace(this.workspace,next))return;
+    const request=this.next();this.selection={kind:'none'};this.preview={kind:'idle'};
+    await refreshSnapshots(next);if(request!==this.request)return;
+    this.workspace=next;
+    const pending=this.workbench.layers.flatMap(layer=>layer.rows).find(row=>row.access==='review');
+    if(pending)this.selection={kind:'memory',row:pending};
+    syncUrl();render();
+  }
+};
+
+function syncUrl(){
+  const url=new URL(location.href);url.searchParams.set('project',shell.workspace.project);
+  if(shell.workspace.kind==='ticket')url.searchParams.set('ticket',shell.workspace.ticket);else url.searchParams.delete('ticket');
+  history.replaceState(null,'',url);
+}
+function render(){
+  renderChrome();renderLayers();renderDesk();renderPreview();
+}
+function renderChrome(){
+  const current=shell.workspace;
+  const projects=[...shell.catalog.map(item=>item.id)];
+  if(!projects.includes(current.project))projects.push(current.project);
+  $('project-select').innerHTML=projects.sort().map(id=>'<option value="'+esc(id)+'">'+esc(id)+'</option>').join('');
+  $('project-select').value=current.project;
+  const catalog=shell.catalog.find(item=>item.id===current.project);
+  const tickets=catalog?.tickets||[];
+  $('ticket-select').innerHTML='<option value="">Project defaults</option>'+tickets.map(id=>'<option value="'+esc(id)+'">'+esc(id)+'</option>').join('');
+  if(current.kind==='ticket'&&!tickets.includes(current.ticket))$('ticket-select').insertAdjacentHTML('beforeend','<option value="'+esc(current.ticket)+'">'+esc(current.ticket)+'</option>');
+  $('ticket-select').value=current.kind==='ticket'?current.ticket:'';
+  $('model-planner').disabled=!shell.workbench.capabilities.modelPlanner;
+  $('embeddings').disabled=!shell.workbench.capabilities.embeddings;
+}
+function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
+function renderLayers(){
+  const filter=$('layer-filter').value.trim().toLowerCase();
+  $('layers').innerHTML=shell.workbench.layers.map(layer=>{
+    const rows=layer.rows.filter(row=>rowMatches(row,filter));
+    const sources=layer.sources.filter(source=>!filter||[source.title,source.id,source.body||''].join(' ').toLowerCase().includes(filter));
+    const candidates=rows.filter(row=>row.memory.status==='candidate');
+    const settled=rows.filter(row=>row.memory.status!=='candidate');
+    const own=layer.kind==='ticket'||(layer.kind==='baseline'&&shell.workspace.kind==='baseline');
+    const actions=layer.kind==='lab'
+      ?'<button class="small" data-standing>Add standing rule</button>'
+      :own?'<button class="small" data-compose-source="'+layer.kind+'">Add evidence</button><button class="small" data-compose-memory="'+layer.kind+'">Add candidate</button>':'';
+    return'<section class="layer" data-layer="'+layer.kind+'"><div class="layer-head"><div><h2>'+layerLabel(layer.kind)+'</h2><div class="layer-meta">'+candidates.length+' candidates · '+settled.filter(row=>row.memory.status==='confirmed').length+' confirmed</div></div><div class="layer-actions">'+actions+'</div></div>'
+      +renderBand('Candidates',candidates)+renderBand('Confirmed and retracted',settled)
+      +'<details class="advanced"><summary style="padding:0 11px 9px">Evidence ('+sources.length+')</summary><div class="advanced-body">'+sources.map(source=>'<button type="button" class="row" data-source-id="'+esc(source.id)+'"><span class="row-title">'+esc(source.title)+'</span><span class="row-foot">'+esc(source.id)+'</span></button>').join('')+'</div></details></section>';
+  }).join('');
+}
+function renderBand(title,rows){
+  if(!rows.length)return'';
+  return'<div class="band-title">'+title+'</div>'+rows.map(row=>{
+    const selected=shell.selection.kind==='memory'&&shell.selection.row.memory.id===row.memory.id;
+    return'<button class="row'+(selected?' selected':'')+'" data-memory-id="'+esc(row.memory.id)+'"><span class="row-title">'+esc(row.memory.title)+'</span><span class="row-claim">'+esc(row.memory.claim)+'</span><span class="row-foot"><span class="pill '+esc(row.memory.status)+'">'+esc(row.memory.status)+'</span><span>'+esc(row.memory.kind)+'</span><span>v'+esc(row.memory.version)+'</span>'+'</span></button>';
+  }).join('');
+}
+function allSources(){return shell.workbench.layers.flatMap(layer=>layer.sources)}
+function findRow(id){return shell.workbench.layers.flatMap(layer=>layer.rows).find(row=>row.memory.id===id)}
+function findSource(id){return allSources().find(source=>source.id===id)}
+function permittedSourceIds(target){
+  return shell.workbench.layers.filter(layer=>target==='lab'?layer.kind==='lab':target==='baseline'?layer.kind!=='ticket':true).flatMap(layer=>layer.sources.map(source=>source.id));
+}
+function validateCoverage(ids,target){
+  const allowed=new Set(permittedSourceIds(target));const bad=ids.filter(id=>!allowed.has(id));
+  if(bad.length)throw new Error('Evidence is missing or outside this layer: '+bad.join(', '));
+}
+function memoryFields(memory={},editable=true){
+  const disabled=editable?'':' disabled';
+  return'<label class="field">Title <input name="title" value="'+esc(memory.title||'')+'"'+disabled+' required></label>'
+    +'<label class="field">Claim <textarea class="claim" name="claim"'+disabled+' required>'+esc(memory.claim||'')+'</textarea></label>'
+    +'<div class="form-grid"><label class="field">Kind <select name="kind"'+disabled+'>'+['fact','constraint','decision','event','lesson'].map(kind=>'<option'+(kind===(memory.kind||'lesson')?' selected':'')+'>'+kind+'</option>').join('')+'</select></label><label class="field">Evidence links <input name="source_ids" value="'+esc((memory.source_ids||[]).join(', '))+'"'+disabled+' required></label></div>'
+    +'<details class="advanced"><summary>Conditions and rationale</summary><div class="advanced-body">'
+    +'<label class="field">Actions any JSON <textarea name="actions_any"'+disabled+'>'+esc(JSON.stringify(memory.applies?.actions_any||[]))+'</textarea></label>'
+    +'<label class="field">State equals JSON <textarea name="state_equals"'+disabled+'>'+esc(JSON.stringify(memory.applies?.state_equals||{}))+'</textarea></label>'
+    +'<label class="field">Unless JSON <textarea name="unless"'+disabled+'>'+esc(JSON.stringify(memory.unless||{}))+'</textarea></label>'
+    +'<label class="field">Assumptions JSON <textarea name="assumptions"'+disabled+'>'+esc(JSON.stringify(memory.assumptions||{}))+'</textarea></label>'
+    +'<label class="field">Assertions JSON <textarea name="assertions"'+disabled+'>'+esc(JSON.stringify(memory.assertions||{}))+'</textarea></label>'
+    +'<label class="field">Rationale <textarea name="rationale"'+disabled+'>'+esc(memory.rationale||'')+'</textarea></label>'
+    +'<label class="field">Expected effect <textarea name="expected_effect"'+disabled+'>'+esc(memory.expected_effect||'')+'</textarea></label></div></details>';
+}
+function renderDesk(){
+  const selection=shell.selection;
+  if(selection.kind==='none'){$('desk').innerHTML='<div class="card empty">Select a memory or evidence record.</div>';return}
+  if(selection.kind==='source'){
+    const source=selection.source;
+    $('desk').innerHTML='<article class="card"><div class="row-foot"><span class="pill">evidence</span><span>'+esc(source.id)+'</span></div><h3>'+esc(source.title)+'</h3><div class="source-body">'+esc(source.body||'Select Read to load the immutable source.')+'</div><div class="actions"><button data-read-source="'+esc(source.id)+'">Read</button><button data-draft-source="'+esc(source.id)+'"'+(shell.workbench.capabilities.modelPlanner?'':' disabled')+'>Draft lessons</button><button data-mem0-source="'+esc(source.id)+'">Mem0 extract</button></div></article>';return;
+  }
+  if(selection.kind==='compose-source'){
+    $('desk').innerHTML='<form class="card" id="source-form"><h3>Add evidence</h3><label class="field">Title <input name="title" required></label><label class="field">Original observation <textarea name="body" required></textarea></label><div class="actions"><button class="primary push">Save evidence</button></div></form>';return;
+  }
+  if(selection.kind==='compose-memory'){
+    $('desk').innerHTML='<form class="card memory-form" id="memory-form"><h3>Add candidate</h3>'+memoryFields({},true)+'<div class="actions"><button class="primary push">Save candidate</button></div></form>';return;
+  }
+  const row=selection.row,m=row.memory;
+  const editable=row.access==='edit';
+  let controls='';
+  if(row.access==='review')controls='<button type="button" class="primary" data-status="confirmed">Confirm</button><button type="button" class="danger" data-status="retracted">Retract</button>';
+  if(row.access==='edit')controls='<button class="primary" type="submit">Save revision</button>';
+  if(row.access==='inspect')controls=row.routeToOwner.kind==='project-defaults'?'<button type="button" data-owner-baseline>Review in Project defaults</button>':'<button type="button" data-standing data-standing-id="'+esc(m.id)+'">Review as lab rule</button>';
+  $('desk').innerHTML='<form class="card" id="review-form"><div class="row-foot"><span class="pill '+esc(m.status)+'">'+esc(m.status)+'</span><span>'+esc(m.id)+'</span><span>version '+esc(m.version)+'</span></div>'+memoryFields(m,editable)+'<div class="linked"><strong class="hint">Evidence</strong>'+(m.source_ids||[]).map(id=>'<button type="button" data-source-id="'+esc(id)+'">'+esc(id)+'</button>').join('')+'</div><div class="actions">'+controls+'<button type="button" class="push" data-history="'+esc(m.id)+'">Revision history</button></div></form>';
+}
+function formMemory(form,status){
+  const data=new FormData(form);
+  return{title:String(data.get('title')||'').trim(),claim:String(data.get('claim')||'').trim(),kind:data.get('kind'),status:status||'candidate',source_ids:sourceIds(data.get('source_ids')),applies:{actions_any:JSON.parse(data.get('actions_any')||'[]'),state_equals:JSON.parse(data.get('state_equals')||'{}')},unless:JSON.parse(data.get('unless')||'{}'),assumptions:JSON.parse(data.get('assumptions')||'{}'),assertions:JSON.parse(data.get('assertions')||'{}'),rationale:String(data.get('rationale')||''),expected_effect:String(data.get('expected_effect')||'')};
+}
+function taskDraft(){
+  const state=JSON.parse($('task-state').value||'{}'),actions=JSON.parse($('task-actions').value||'[]'),needs=JSON.parse($('task-needs').value||'[]');
+  if(!state||Array.isArray(state)||typeof state!=='object')throw new Error('State must be a JSON object.');
+  if(!Array.isArray(actions)||!Array.isArray(needs))throw new Error('Actions and needs must be JSON arrays.');
+  return{query:$('query').value.trim(),as_of:$('as-of').value,state,actions,needs,budget:Number($('budget').value),modelPlanner:$('model-planner').checked,embeddings:$('embeddings').checked};
+}
+function renderPreview(){
+  if(shell.preview.kind!=='ready')return;
+  const result=shell.preview.result;
+  $('preview-result').innerHTML=renderPacket(result.targeted,true)+'<details class="advanced"><summary>Compare methods</summary><div class="advanced-body">'+result.alternatives.map(packet=>renderPacket(packet,false)).join('')+'</div></details>';
+}
+function renderPacket(packet,feedback){
+  const groups=['lab','baseline','ticket'].map(kind=>({kind,records:(packet.selected||[]).filter(memory=>layerKey(memory)===kind)})).filter(group=>group.records.length);
+  const checks=(packet.needs||[]).map(item=>'<p><b>'+esc(item.need)+'</b> '+esc(item.status)+'</p>').join('')+(packet.conflicts||[]).map(item=>'<p><b>Conflict</b> '+esc(item.key)+' · '+esc(item.memory_ids.join(', '))+'</p>').join('');
+  return'<article class="card"><div class="packet-head"><h3>'+esc(strategyNames[packet.strategy])+'</h3><span class="metric">'+esc(packet.selected.length)+' records · '+esc(packet.estimated_tokens)+' tokens</span></div>'
+    +(packet.warnings||[]).map(warning=>'<div class="notice">'+esc(warning)+'</div>').join('')
+    +(checks?'<div class="checks">'+checks+'</div>':'')
+    +groups.map(group=>'<section class="packet-group"><h4>'+layerLabel(group.kind)+'</h4>'+group.records.map(memory=>'<div class="packet-memory"><b>'+esc(memory.title)+'</b><p>'+esc(memory.claim)+'</p>'+(feedback?'<form class="feedback-form" data-feedback data-run="'+esc(packet.run_id)+'" data-memory="'+esc(memory.id)+'"><select name="observation"><option value="helpful">Helpful</option><option value="irrelevant">Irrelevant</option><option value="stale">Stale</option><option value="missed">Missed</option></select><button>Report feedback</button><textarea name="note" placeholder="Observed result"></textarea></form>':'')+'</div>').join('')+'</section>').join('')
+    +'<details class="advanced"><summary>Why these records?</summary><div class="advanced-body">'+(packet.trace||[]).filter(item=>item.stage!=='selected').map(item=>'<p><b>'+esc(item.title||item.id)+'</b> · '+esc(item.stage)+' · '+esc((item.reasons||[]).join('; '))+'</p>').join('')+'</div></details>'
+    +'<details class="advanced"><summary>Agent-ready context</summary><pre class="context">'+esc(packet.context)+'</pre></details></article>';
+}
+function openStanding(id){
+  renderStanding();$('standing-dialog').showModal();
+  if(id){const memory=globalGovernancePort.load().rows.find(row=>row.memory.id===id)?.memory;if(memory)fillGlobalMemory(memory)}
+}
+function renderStanding(){
+  const layer=globalGovernancePort.load();
+  const rows=[...layer.rows].sort((a,b)=>(a.memory.status==='candidate'?0:1)-(b.memory.status==='candidate'?0:1)||a.memory.title.localeCompare(b.memory.title));
+  $('standing-list').innerHTML=rows.map(row=>'<article class="rule-item"><strong>'+esc(row.memory.title)+'</strong><p>'+esc(row.memory.claim)+'</p><div class="row-foot"><span class="pill '+esc(row.memory.status)+'">'+esc(row.memory.status)+'</span><span>v'+esc(row.memory.version)+'</span></div><div class="actions"><button class="small" data-global-edit="'+esc(row.memory.id)+'">Review</button></div></article>').join('')||'<div class="empty">No standing rules yet.</div>';
+}
+function fillGlobalMemory(memory){
+  const form=$('global-memory-form');form.reset();
+  for(const key of ['id','title','claim','kind','status','rationale','expected_effect'])if(form.elements[key])form.elements[key].value=memory[key]||'';
+  form.elements.version.value=memory.version||'';
+  form.elements.source_ids.value=(memory.source_ids||[]).join(', ');
+  form.elements.actions_any.value=JSON.stringify(memory.applies?.actions_any||[]);
+  form.elements.state_equals.value=JSON.stringify(memory.applies?.state_equals||{});
+  for(const key of ['unless','assumptions','assertions'])form.elements[key].value=JSON.stringify(memory[key]||{});
+  $('global-memory-details').open=true;
+}
+function requestGlobal(intent,claim){
+  shell.pendingGlobal=intent;$('global-confirm-claim').textContent=claim;$('global-confirm-dialog').showModal();
+}
+function clearGlobalForm(){$('global-memory-form').reset();$('global-memory-form').elements.id.value='';$('global-memory-form').elements.version.value=''}
+function fillScenario(scenario){
+  const task=scenario.task;$('query').value=task.query||'';$('as-of').value=task.as_of||new Date().toISOString().slice(0,10);
+  $('task-state').value=JSON.stringify(task.state||{},null,2);$('task-actions').value=JSON.stringify(task.actions||[],null,2);$('task-needs').value=JSON.stringify(task.needs||[],null,2);
+}
+function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button');if(!button)return;
+  try{
+    if(button.dataset.close){$(button.dataset.close).close();return}
+    if(button.dataset.memoryId){shell.selection={kind:'memory',row:findRow(button.dataset.memoryId)};renderLayers();renderDesk();return}
+    if(button.dataset.sourceId){shell.selection={kind:'source',source:findSource(button.dataset.sourceId)};renderDesk();return}
+    if(button.dataset.composeSource){shell.selection={kind:'compose-source',target:button.dataset.composeSource};renderDesk();return}
+    if(button.dataset.composeMemory){shell.selection={kind:'compose-memory',target:button.dataset.composeMemory};renderDesk();return}
+    if(button.dataset.standing!==undefined){openStanding(button.dataset.standingId);return}
+    if(button.dataset.ownerBaseline!==undefined){await shell.selectWorkspace(workspace(shell.workspace.project));return}
+    if(button.dataset.status){const row=shell.selection.row;await workspacePort.revise(shell.workspace,row,{status:button.dataset.status});shell.selection={kind:'memory',row:findRow(row.memory.id)};render();showToast('Candidate '+button.dataset.status+'.');return}
+    if(button.dataset.readSource){const source=await api('source/'+encodeURIComponent(button.dataset.readSource));shell.selection={kind:'source',source};renderDesk();return}
+    if(button.dataset.draftSource){const result=await api('draft',{source_id:button.dataset.draftSource});shell.selection={kind:'compose-memory',target:shell.workspace.kind};renderDesk();if(result.memories?.[0]){const form=$('memory-form'),draft=result.memories[0];for(const key of ['title','claim','kind','rationale','expected_effect'])if(form.elements[key])form.elements[key].value=draft[key]||'';form.elements.source_ids.value=(draft.source_ids||[]).join(', ')}showToast((result.memories||[]).length+' draft lessons returned.');return}
+    if(button.dataset.mem0Source){await api('mem0-extract',{source_id:button.dataset.mem0Source,...scopeOf(shell.workspace)});await refreshSnapshots(shell.workspace);render();showToast('Mem0 candidates saved for review.');return}
+    if(button.dataset.history){const result=await api('revisions/'+encodeURIComponent(button.dataset.history));$('history-title').textContent='Revision history · '+button.dataset.history;$('history-body').textContent=result.revisions.map(item=>'v'+item.version+' · '+item.status+'\n'+item.claim).join('\n\n');$('history-dialog').showModal();return}
+    if(button.dataset.globalEdit){const memory=globalGovernancePort.load().rows.find(row=>row.memory.id===button.dataset.globalEdit)?.memory;if(memory)fillGlobalMemory(memory);return}
+  }catch(error){showToast(error.message,true)}
+});
+
+document.addEventListener('submit',async event=>{
+  event.preventDefault();
+  try{
+    if(event.target.id==='source-form'){const data=new FormData(event.target);await workspacePort.addEvidence(shell.workspace,{title:String(data.get('title')),body:String(data.get('body'))});shell.selection={kind:'none'};render();showToast('Evidence saved.');return}
+    if(event.target.id==='memory-form'){const draft=formMemory(event.target,'candidate');validateCoverage(draft.source_ids,shell.selection.target);await workspacePort.addCandidate(shell.workspace,{id:'M-'+Date.now().toString(36),...draft});shell.selection={kind:'none'};render();showToast('Candidate saved.');return}
+    if(event.target.id==='review-form'){const row=shell.selection.row,patch=formMemory(event.target,row.memory.status);validateCoverage(patch.source_ids,layerKey(row.memory));await workspacePort.revise(shell.workspace,row,patch);shell.selection={kind:'memory',row:findRow(row.memory.id)};render();showToast('Revision saved.');return}
+    if(event.target.id==='global-source-form'){const data=new FormData(event.target),draft={title:String(data.get('title')).trim(),body:String(data.get('body')).trim()};requestGlobal({kind:'source',draft},draft.body);return}
+    if(event.target.id==='global-memory-form'){
+      const version=Number(new FormData(event.target).get('version')||0);
+      let draft=memoryDraft(event.target);
+      if(version){
+        const current=globalGovernancePort.load().rows.find(row=>row.memory.id===draft.id)?.memory;
+        if(!current)throw new Error('Reload standing rules before revising this memory.');
+        draft={...current,...draft};
+      }else draft.status='candidate';
+      validateCoverage(draft.source_ids,'lab');requestGlobal({kind:version?'revise':'candidate',draft,expectedVersion:version},draft.claim);return;
+    }
+    if(event.target.dataset.feedback!==undefined){const data=new FormData(event.target);await workspacePort.report(shell.workspace,{runId:event.target.dataset.run,memoryId:event.target.dataset.memory,observation:data.get('observation'),note:String(data.get('note')||'')});render();showToast('Feedback recorded.');return}
+  }catch(error){showToast(error.message,true)}
+});
+
+$('project-select').addEventListener('change',()=>shell.selectWorkspace(workspace($('project-select').value)).catch(error=>showToast(error.message,true)));
+$('ticket-select').addEventListener('change',()=>shell.selectWorkspace(workspace(shell.workspace.project,$('ticket-select').value)).catch(error=>showToast(error.message,true)));
+$('new-project').addEventListener('click',()=>{const value=prompt('New project name');if(value)shell.selectWorkspace(workspace(value)).catch(error=>showToast(error.message,true))});
+$('new-ticket').addEventListener('click',()=>{const value=prompt('New ticket ID');if(value)shell.selectWorkspace(workspace(shell.workspace.project,value)).catch(error=>showToast(error.message,true))});
+$('layer-filter').addEventListener('input',renderLayers);
+$('open-standing').addEventListener('click',()=>openStanding());
+$('open-benchmark').addEventListener('click',()=>{$('benchmark-dialog').showModal();$('lab-menu').open=false});
+$('export-data').addEventListener('click',async()=>{try{download('context-lab-export.json',await api('export'))}catch(error){showToast(error.message,true)}});
+$('clear-global-form').addEventListener('click',clearGlobalForm);
+$('cancel-global').addEventListener('click',()=>{shell.pendingGlobal=null;$('global-confirm-dialog').close()});
+$('approve-global').addEventListener('click',async()=>{const intent=shell.pendingGlobal;if(!intent)return;try{$('approve-global').disabled=true;await globalGovernancePort.apply(intent);shell.pendingGlobal=null;$('global-confirm-dialog').close();render();renderStanding();clearGlobalForm();$('global-source-form').reset();showToast('Standing rule write completed.')}catch(error){showToast(error.message,true)}finally{$('approve-global').disabled=false}});
+$('preview-button').addEventListener('click',async()=>{try{$('preview-button').disabled=true;const result=await workspacePort.preview(shell.workspace,taskDraft());shell.preview={kind:'ready',result};render();showToast('Context preview ready.')}catch(error){showToast(error.message,true)}finally{$('preview-button').disabled=false}});
+$('scenario').addEventListener('change',()=>{const scenario=shell.scenarios.find(item=>item.id===$('scenario').value);if(!scenario)return;try{const target=workspace(scenario.task.project||shell.workspace.project,scenario.task.ticket||'');if(sameWorkspace(target,shell.workspace)){fillScenario(scenario);return}shell.pendingScenario={scenario,target};$('scenario-target').textContent='Switch to '+target.project+(target.kind==='ticket'?' / '+target.ticket:' / Project defaults')+' before filling this scenario.';$('scenario-dialog').showModal()}catch(error){showToast(error.message,true)}});
+$('cancel-scenario').addEventListener('click',()=>{shell.pendingScenario=null;$('scenario').value='';$('scenario-dialog').close()});
+$('approve-scenario').addEventListener('click',async()=>{const pending=shell.pendingScenario;if(!pending)return;try{await shell.selectWorkspace(pending.target);fillScenario(pending.scenario);$('scenario-dialog').close();shell.pendingScenario=null}catch(error){showToast(error.message,true)}});
+$('run-benchmark').addEventListener('click',async()=>{try{$('run-benchmark').disabled=true;const result=await api('benchmark',{budget:Number($('budget').value),model_planner:$('model-planner').checked,embeddings:$('embeddings').checked});$('benchmark-results').innerHTML='<table><thead><tr><th>Method</th><th>Cases passed</th><th>Recall</th></tr></thead><tbody>'+Object.entries(result.summary).map(([name,row])=>'<tr><td>'+esc(strategyNames[name])+'</td><td>'+esc(row.context_cases_passed)+' / '+esc(row.cases)+'</td><td>'+esc(Math.round(row.required_recall*100))+'%</td></tr>').join('')+'</tbody></table>';await refreshSnapshots(shell.workspace);render()}catch(error){showToast(error.message,true)}finally{$('run-benchmark').disabled=false}});
+
+(async function boot(){
+  try{
+    $('as-of').value=new Date().toISOString().slice(0,10);
+    const params=new URLSearchParams(location.search),legacy=params.get('project')==='__global__';
+    const [scopes,scenarios]=await Promise.all([api('scopes'),api('scenarios')]);
+    shell.catalog=parseCatalog(scopes);shell.scenarios=scenarios.cases||[];
+    const first=shell.catalog[0]?.id||'fieldnote';
+    const initial=workspace(legacy?first:(params.get('project')||first),legacy?'':(params.get('ticket')||''));
+    shell.workspace=initial;shell.workbench=await workspacePort.open(initial);
+    const pending=shell.workbench.layers.flatMap(layer=>layer.rows).find(row=>row.access==='review');
+    if(pending)shell.selection={kind:'memory',row:pending};
+    $('scenario').innerHTML='<option value="">Custom task</option>'+shell.scenarios.map(item=>'<option value="'+esc(item.id)+'">'+esc(item.label)+'</option>').join('');
+    syncUrl();render();if(legacy)openStanding();
+  }catch(error){showToast(error.message,true)}
+})();
 </script>
-</body></html>
+</body>
+</html>
