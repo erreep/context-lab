@@ -328,6 +328,8 @@ function renderDesk(){
   if(row.access==='review')controls='<button type="button" class="primary" data-status="confirmed">Confirm</button><button type="button" class="danger" data-status="retracted">Retract</button>';
   if(row.access==='edit')controls='<button class="primary" type="submit">Save revision</button>';
   if(row.access==='inspect')controls=row.routeToOwner.kind==='project-defaults'?'<button type="button" data-owner-baseline>Review in Project defaults</button>':'<button type="button" data-standing data-standing-id="'+esc(m.id)+'">Review as lab rule</button>';
+  if(m.status==='confirmed'&&m.ticket&&shell.workspace.kind==='ticket'&&m.ticket===shell.workspace.ticket)
+    controls+='<button type="button" data-promote="'+esc(m.id)+'">Promote to project</button>';
   $('desk').innerHTML='<form class="card" id="review-form"><div class="row-foot"><span class="pill '+esc(m.status)+'">'+esc(m.status)+'</span><span>'+esc(m.id)+'</span><span>version '+esc(m.version)+'</span></div>'+memoryFields(m,editable)+'<div class="linked"><strong class="hint">Evidence</strong>'+(m.source_ids||[]).map(id=>'<button type="button" data-source-id="'+esc(id)+'">'+esc(id)+'</button>').join('')+'</div><div class="actions">'+controls+'<button type="button" class="push" data-history="'+esc(m.id)+'">Revision history</button></div></form>';
 }
 function formMemory(form,status){
@@ -395,6 +397,7 @@ document.addEventListener('click',async event=>{
     if(button.dataset.standing!==undefined){openStanding(button.dataset.standingId);return}
     if(button.dataset.ownerBaseline!==undefined){await shell.selectWorkspace(workspace(shell.workspace.project));return}
     if(button.dataset.status){const row=shell.selection.row;await workspacePort.revise(shell.workspace,row,{status:button.dataset.status});shell.selection={kind:'memory',row:findRow(row.memory.id)};render();showToast('Candidate '+button.dataset.status+'.');return}
+    if(button.dataset.promote){const result=await api('promote',{memory_id:button.dataset.promote});await refreshSnapshots(shell.workspace);showToast(result.idempotent?'Promotion already existed.':'Promoted to project candidate '+result.memory.id+'.');return}
     if(button.dataset.readSource){const source=await api('source/'+encodeURIComponent(button.dataset.readSource));shell.selection={kind:'source',source};renderDesk();return}
     if(button.dataset.draftSource){const result=await api('draft',{source_id:button.dataset.draftSource});shell.selection={kind:'compose-memory',target:shell.workspace.kind};renderDesk();if(result.memories?.[0]){const form=$('memory-form'),draft=result.memories[0];for(const key of ['title','claim','kind','rationale','expected_effect'])if(form.elements[key])form.elements[key].value=draft[key]||'';form.elements.source_ids.value=(draft.source_ids||[]).join(', ')}showToast((result.memories||[]).length+' draft lessons returned.');return}
     if(button.dataset.history){const result=await api('revisions/'+encodeURIComponent(button.dataset.history));$('history-title').textContent='Revision history · '+button.dataset.history;$('history-body').textContent=result.revisions.map(item=>'v'+item.version+' · '+item.status+'\n'+item.claim).join('\n\n');$('history-dialog').showModal();return}

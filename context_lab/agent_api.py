@@ -154,6 +154,10 @@ def feedback(store, run_id, memory_id, observation, note=""):
     return store.log_feedback(run_id, memory_id, observation, note)
 
 
+def promote(store, memory_id, title=None, claim=None):
+    return store.promote(memory_id, title=title, claim=claim)
+
+
 def allocate_ticket():
     return {"ticket": knowledge_mod.allocate_ticket()}
 

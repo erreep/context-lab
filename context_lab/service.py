@@ -45,6 +45,8 @@ def dispatch(store, operation, payload):
         return ModelEndpoint(store).draft(source)
     if operation == "allocate-ticket":
         return {"ticket": allocate_ticket()}
+    if operation == "promote":
+        return store.promote(payload.get("memory_id"), title=payload.get("title"), claim=payload.get("claim"))
     raise ValueError("Unknown operation")
 
 

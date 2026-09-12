@@ -71,6 +71,10 @@ TOOLS = [
          {"run_id": {"type": "string"}, "memory_id": {"type": "string"},
           "observation": {"type": "string", "enum": ["helpful", "missed", "irrelevant", "stale"]}, "note": {"type": "string"}},
          ["run_id", "memory_id", "observation"], False),
+    tool("memory_promote",
+         "Promote a confirmed ticket memory to a project-baseline candidate with a scoped summary source and opaque provenance. Raw ticket notes stay isolated. Idempotent on origin+claim.",
+         {"memory_id": {"type": "string"}, "title": {"type": "string"}, "claim": {"type": "string"}},
+         ["memory_id"], False),
 ]
 
 
@@ -93,6 +97,8 @@ def call(store, name, args):
         return agent_api.propose(store, args["memories"])
     if name == "memory_feedback":
         return agent_api.feedback(store, args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
+    if name == "memory_promote":
+        return agent_api.promote(store, args["memory_id"], title=args.get("title"), claim=args.get("claim"))
     raise AgentError("unknown_tool", f"Unknown tool: {name}")
 
 
