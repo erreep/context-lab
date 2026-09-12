@@ -4,6 +4,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from context_lab.agent_api import context, inspect_run
 from context_lab.engine import compile_context
@@ -83,6 +84,38 @@ class WireBudgetTests(unittest.TestCase):
         self.assertLessEqual(measured, 1200)
         legacy = json.dumps(view)
         self.assertNotEqual(text, legacy)
+
+    def test_context_plans_once_and_saves_one_run(self):
+        for i in range(4, 12):
+            self.store.put_memories([{
+                "id": f"M-extra-{i}", "project": "app", "ticket": "T-1", "kind": "lesson",
+                "status": "confirmed",
+                "title": f"Extra padding lesson {i} " + ("y" * 50),
+                "claim": ("Upload retries preserve operation identity. " * 15) + f"extra={i}",
+                "rationale": "More ticket evidence " * 25,
+                "source_ids": ["src-1"], "need_tags": ["upload"],
+            }])
+        plans = []
+
+        class CountingPlanner:
+            def plan(self, task, rules):
+                plans.append(task["query"])
+                return {"actions": ["implement"], "needs": ["upload"]}
+
+        runs_before = self.store.db.execute("SELECT count(*) FROM runs").fetchone()[0]
+        with mock.patch("context_lab.agent_api.provider_flags", return_value={
+            "planner": CountingPlanner(), "embeddings": None,
+        }):
+            view = context(self.store, {
+                "project": "app", "ticket": "T-1",
+                "query": "upload retry constraints please implement carefully",
+            }, budget=500)
+        runs_after = self.store.db.execute("SELECT count(*) FROM runs").fetchone()[0]
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(runs_after - runs_before, 1)
+        self.assertEqual(view["run_id"], self.store.db.execute(
+            "SELECT id FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()[0])
+        self.assertLessEqual(view["wire_estimated_tokens"], 500)
 
 
 if __name__ == "__main__":
