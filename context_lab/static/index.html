@@ -69,7 +69,7 @@
     <input type="hidden" name="id"><input type="hidden" name="version">
     <label class="field">Title <input name="title" required></label>
     <label class="field">Claim <textarea class="claim" name="claim" required></textarea></label>
-    <div class="form-grid"><label class="field">Kind <select name="kind"><option>constraint</option><option>fact</option><option>decision</option><option>event</option><option>lesson</option></select></label><label class="field">Status <select name="status"><option>candidate</option><option>confirmed</option><option>retracted</option></select></label></div>
+    <div class="form-grid"><label class="field">Kind <select name="kind"><option>standing_rule</option><option>constraint</option><option>fact</option><option>decision</option><option>event</option><option>lesson</option></select></label><label class="field">Status <select name="status"><option>candidate</option><option>confirmed</option><option>retracted</option></select></label></div>
     <label class="field">Evidence links <input name="source_ids" placeholder="src-one, src-two" required></label>
     <details class="advanced"><summary>Conditions and rationale</summary><div class="advanced-body">
       <label class="field">Actions any JSON <textarea name="actions_any">[]</textarea></label>
@@ -297,9 +297,11 @@ function validateCoverage(ids,target){
 }
 function memoryFields(memory={},editable=true){
   const disabled=editable?'':' disabled';
+  const kinds=['fact','constraint','decision','event','lesson','standing_rule'];
   return'<label class="field">Title <input name="title" value="'+esc(memory.title||'')+'"'+disabled+' required></label>'
     +'<label class="field">Claim <textarea class="claim" name="claim"'+disabled+' required>'+esc(memory.claim||'')+'</textarea></label>'
-    +'<div class="form-grid"><label class="field">Kind <select name="kind"'+disabled+'>'+['fact','constraint','decision','event','lesson'].map(kind=>'<option'+(kind===(memory.kind||'lesson')?' selected':'')+'>'+kind+'</option>').join('')+'</select></label><label class="field">Evidence links <input name="source_ids" value="'+esc((memory.source_ids||[]).join(', '))+'"'+disabled+' required></label></div>'
+    +'<div class="form-grid"><label class="field">Kind <select name="kind"'+disabled+'>'+kinds.map(kind=>'<option'+(kind===(memory.kind||'lesson')?' selected':'')+'>'+kind+'</option>').join('')+'</select></label><label class="field">Evidence links <input name="source_ids" value="'+esc((memory.source_ids||[]).join(', '))+'"'+disabled+' required></label></div>'
+    +'<p class="hint">Use standing_rule for lab/project policy that must reserve budget. Ticket-scoped standing_rule is rejected. Change kind on an existing constraint to migrate after review.</p>'
     +'<details class="advanced"><summary>Conditions and rationale</summary><div class="advanced-body">'
     +'<label class="field">Actions any JSON <textarea name="actions_any"'+disabled+'>'+esc(JSON.stringify(memory.applies?.actions_any||[]))+'</textarea></label>'
     +'<label class="field">State equals JSON <textarea name="state_equals"'+disabled+'>'+esc(JSON.stringify(memory.applies?.state_equals||{}))+'</textarea></label>'

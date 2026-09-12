@@ -114,20 +114,37 @@ def error_payload(exc):
     return {"error": {"code": "validation", "message": str(exc)}}
 
 
-def wire_estimated_tokens(obj):
-    """Same unit as engine.estimated_tokens: ceil(UTF-8 bytes / 4) over serialized JSON."""
-    return math.ceil(len(json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) / 4)
+def wire_dumps(obj):
+    """Single JSON serialization for MCP tool results and wire metering."""
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def wire_estimated_tokens(obj_or_text):
+    """ceil(UTF-8 bytes / 4) over the exact text MCP will send (or an object via wire_dumps)."""
+    text = obj_or_text if isinstance(obj_or_text, str) else wire_dumps(obj_or_text)
+    return math.ceil(len(text.encode("utf-8")) / 4)
 
 
 def format_context(packet, detail="agent"):
-    """Project a compile packet for the agent (compact) or inspect (trace) surface."""
+    """Project a compile packet for the agent (compact) or inspect (trace) surface.
+
+    Returns (view, wire_text) where wire_text is the exact JSON MCP should send as tool text.
+    """
     compact = detail in {"agent", "prose"}
     keys = PROSE_KEYS if compact else FULL_KEYS
     out = {k: packet[k] for k in keys if k in packet and k != "picks"}
     # Selected ids/titles only. Never excluded/candidate titles on the agent wire.
     out["picks"] = [{"id": m["id"], "title": m["title"]} for m in packet.get("selected", [])]
-    out["wire_estimated_tokens"] = wire_estimated_tokens(out)
-    return out
+    n = 0
+    for _ in range(4):
+        text = wire_dumps({**out, "wire_estimated_tokens": n})
+        n2 = wire_estimated_tokens(text)
+        if n2 == n:
+            out["wire_estimated_tokens"] = n
+            return out, text
+        n = n2
+    out["wire_estimated_tokens"] = n
+    return out, wire_dumps(out)
 
 
 def activation_hint(store, project, ticket=""):

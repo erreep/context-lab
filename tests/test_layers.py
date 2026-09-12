@@ -111,6 +111,30 @@ class LayerTests(unittest.TestCase):
                 "status": "confirmed", "title": "nope", "claim": "x", "source_ids": [src["id"]],
             }])
 
+    def test_standing_rule_missing_support_fails_closed(self):
+        src = self.store.add_source({
+            "project": "course", "ticket": "", "title": "t", "body": "must call recall",
+        })
+        dep_src = self.store.add_source({
+            "project": "course", "ticket": "", "title": "dep", "body": "support evidence",
+        })
+        self.store.put_memories([{
+            "id": "sr-dep", "project": "course", "ticket": "", "kind": "lesson",
+            "status": "confirmed", "title": "Support", "claim": "support evidence",
+            "source_ids": [dep_src["id"]],
+        }])
+        self.store.put_memories([{
+            "id": "sr-orphan", "project": "course", "ticket": "", "kind": "standing_rule",
+            "status": "confirmed", "title": "Needs dep", "claim": "Standing needs support",
+            "source_ids": [src["id"]], "depends_on": ["sr-dep"],
+        }])
+        dep = self.store.memory("sr-dep")
+        self.store.put_memories([dict(dep, status="retracted", expected_version=dep["version"])])
+        with self.assertRaisesRegex(ValueError, "MandatoryPolicyBlocked"):
+            compile_context(self.store, {
+                "project": "course", "ticket": "T-1", "query": "anything",
+            }, persist=False)
+
     def test_info_lists_inherited(self):
         self._confirmed(GLOBAL_PROJECT, "", "g3", "Rule", "lab rule",
                         confirm_global=True, kind="standing_rule")

@@ -28,6 +28,14 @@ def env_local_only():
     return raw not in {"0", "false", "no", "off"}
 
 
+class LoopbackRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects that leave loopback when local_only is on."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        assert_local_host(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _allowed_vocab(store, project, rules):
     actions = set(rules.get("actions", {}))
     needs = set(rules.get("needs", []))
@@ -50,8 +58,18 @@ class ModelEndpoint:
             raise ValueError("Set CONTEXT_LAB_BASE_URL to a compatible endpoint, including /v1 if required")
         if local_only is None:
             local_only = env_local_only()
-        if local_only:
+        self.local_only = bool(local_only)
+        if self.local_only:
             assert_local_host(self.base)
+
+    def _opener(self):
+        if self.local_only:
+            # Drop env HTTP(S)_PROXY so work data cannot leave via a corporate proxy.
+            return urllib.request.build_opener(
+                urllib.request.ProxyHandler({}),
+                LoopbackRedirectHandler,
+            )
+        return urllib.request.build_opener()
 
     def request(self, route, payload):
         headers = {"Content-Type": "application/json"}
@@ -59,7 +77,7 @@ class ModelEndpoint:
             headers["Authorization"] = "Bearer " + self.key
         req = urllib.request.Request(self.base + route, data=json.dumps(payload).encode(), headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=90) as response:
+            with self._opener().open(req, timeout=90) as response:
                 return json.load(response)
         except urllib.error.HTTPError as e:
             raise ValueError(f"Model endpoint returned HTTP {e.code}; check model, URL and credentials") from None

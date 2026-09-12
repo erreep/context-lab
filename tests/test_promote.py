@@ -59,6 +59,33 @@ class PromoteTests(unittest.TestCase):
         self.assertNotIn(self.src["body"], blob)
         self.assertNotIn("T-1", [m.get("ticket") for m in packet["selected"]])
 
+    def test_promote_preserves_validity_and_rejects_ticket_deps(self):
+        dep_src = self.store.add_source({
+            "project": "app", "ticket": "", "title": "base dep", "body": "baseline support",
+        })
+        self.store.put_memories([{
+            "id": "mem-dep", "project": "app", "ticket": "", "kind": "lesson",
+            "status": "confirmed", "title": "Dep", "claim": "baseline support",
+            "source_ids": [dep_src["id"]],
+        }])
+        self.store.put_memories([{
+            "id": "mem-limited", "project": "app", "ticket": "T-1", "kind": "lesson",
+            "status": "confirmed", "title": "Timed", "claim": "Expires soon",
+            "source_ids": [self.src["id"]], "depends_on": ["mem-dep"],
+            "valid_from": "2020-01-01", "valid_until": "2020-06-01",
+        }])
+        result = self.store.promote("mem-limited")
+        mem = result["memory"]
+        self.assertEqual(mem["valid_until"], "2020-06-01")
+        self.assertEqual(mem["depends_on"], ["mem-dep"])
+        self.store.put_memories([{
+            "id": "mem-bad-dep", "project": "app", "ticket": "T-1", "kind": "lesson",
+            "status": "confirmed", "title": "Bad", "claim": "needs ticket dep",
+            "source_ids": [self.src["id"]], "depends_on": ["mem-ticket"],
+        }])
+        with self.assertRaisesRegex(ValueError, "ticket-scoped depends_on"):
+            self.store.promote("mem-bad-dep")
+
 
 if __name__ == "__main__":
     unittest.main()

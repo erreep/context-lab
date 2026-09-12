@@ -352,6 +352,10 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
     def admit(mid, *, policy_lane):
         nonlocal policy_used
         members, missing = bundle(mid)
+        if policy_lane and missing:
+            raise ValueError(
+                "MandatoryPolicyBlocked: standing_rule support unavailable: " + ", ".join(missing)
+            )
         if missing:
             trace[mid].update(stage="dependency_blocked", reasons=trace[mid]["reasons"] + ["Unavailable dependencies: " + ", ".join(missing)])
             dependency_gaps.append({"id": mid, "missing": missing})

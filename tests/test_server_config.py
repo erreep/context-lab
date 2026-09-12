@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
@@ -27,6 +28,13 @@ class ServerConfigTests(unittest.TestCase):
     def test_local_only_accepts_loopback(self):
         endpoint = ModelEndpoint(base_url="http://127.0.0.1:12345/v1", model="x", local_only=True)
         self.assertTrue(endpoint.base.startswith("http://127.0.0.1"))
+        self.assertTrue(endpoint.local_only)
+
+    def test_local_only_opener_disables_env_proxies(self):
+        endpoint = ModelEndpoint(base_url="http://127.0.0.1:12345/v1", model="x", local_only=True)
+        opener = endpoint._opener()
+        self.assertFalse(any(isinstance(h, urllib.request.ProxyHandler) for h in opener.handlers))
+        self.assertTrue(any(type(h).__name__ == "LoopbackRedirectHandler" for h in opener.handlers))
 
     @patch.dict(os.environ, {
         "CONTEXT_LAB_BASE_URL": "http://127.0.0.1:9/v1",

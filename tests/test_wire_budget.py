@@ -1,13 +1,14 @@
 """Wire budget: CompactView must fit budget; inspect keeps traces off the agent wire."""
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from context_lab.agent_api import context, inspect_run
 from context_lab.engine import compile_context
-from context_lab.schemas import format_context, wire_estimated_tokens
+from context_lab.mcp import call
+from context_lab.schemas import format_context, wire_dumps, wire_estimated_tokens
 from context_lab.store import Store
 
 
@@ -39,15 +40,12 @@ class WireBudgetTests(unittest.TestCase):
     def test_full_packet_can_exceed_budget_while_compact_fits(self):
         task = {"project": "app", "ticket": "T-1", "query": "upload retry constraints", "needs": ["upload"]}
         packet = compile_context(self.store, task, budget=1200)
-        full_keys = format_context(packet, detail="inspect")
-        # Legacy overshoot shape: prose under budget, inspect/full wire larger.
+        full_keys, _ = format_context(packet, detail="inspect")
         self.assertLessEqual(packet["estimated_tokens"], 1200)
-        compact = format_context(packet, detail="agent")
+        compact, wire = format_context(packet, detail="agent")
+        self.assertEqual(wire, wire_dumps(compact))
+        self.assertEqual(compact["wire_estimated_tokens"], wire_estimated_tokens(wire))
         self.assertLessEqual(compact["wire_estimated_tokens"], 1200)
-        self.assertLess(compact["wire_estimated_tokens"], wire_estimated_tokens(
-            {k: packet[k] for k in ("run_id", "context", "estimated_tokens", "needs", "warnings",
-                                    "dependency_gaps", "selected", "trace", "conflicts") if k in packet}
-        ))
 
     def test_agent_context_omits_excluded_titles(self):
         view = context(self.store, {
@@ -67,6 +65,24 @@ class WireBudgetTests(unittest.TestCase):
         traced = inspect_run(self.store, view["run_id"])
         self.assertIn("trace", traced)
         self.assertIn("Unconfirmed candidate must not leak", json.dumps(traced))
+
+    def test_mcp_text_matches_reported_wire_tokens_with_unicode(self):
+        self.store.put_memories([{
+            "id": "M-uni", "project": "app", "ticket": "T-1", "kind": "lesson", "status": "confirmed",
+            "title": "Unicode café résumé 日本語",
+            "claim": "Preserve opération identity — アップロード " * 40,
+            "source_ids": ["src-1"], "need_tags": ["upload"],
+        }])
+        view = call(self.store, "memory_context", {
+            "task": {"project": "app", "ticket": "T-1", "query": "upload opération 日本語", "needs": ["upload"]},
+            "budget": 1200,
+        })
+        text = wire_dumps(view)
+        measured = math.ceil(len(text.encode("utf-8")) / 4)
+        self.assertEqual(view["wire_estimated_tokens"], measured)
+        self.assertLessEqual(measured, 1200)
+        legacy = json.dumps(view)
+        self.assertNotEqual(text, legacy)
 
 
 if __name__ == "__main__":
