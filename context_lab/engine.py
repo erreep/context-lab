@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from .store import GLOBAL_PROJECT, checked_date, layer_rank, scope_key, scope_layers
+from .schemas import STANDING_MAX_TOKENS, STANDING_MIN_TOKENS, STANDING_RESERVE_RATIO
 
 ROOT = Path(__file__).resolve().parent.parent
 STOP = set("a an and are as at be by can could for from how i in is it of on or our please that the their this to we with would you your".split())
@@ -48,6 +49,24 @@ def bm25(query, docs):
 
 def catalog():
     return json.loads((ROOT / "data" / "task_rules.json").read_text())
+
+
+def vocabulary(store, project):
+    """Catalog actions/needs unioned with tags from confirmed project memories."""
+    rules = catalog()
+    actions = set(rules.get("actions", {}))
+    needs = set(rules.get("needs", []))
+    for m in store.memories(project=project, ticket=""):
+        if m.get("status") != "confirmed":
+            continue
+        needs.update(m.get("need_tags", []))
+        actions.update(m.get("applies", {}).get("actions_any", []))
+    for m in store.memories(project=GLOBAL_PROJECT, ticket=""):
+        if m.get("status") != "confirmed":
+            continue
+        needs.update(m.get("need_tags", []))
+        actions.update(m.get("applies", {}).get("actions_any", []))
+    return {"actions": sorted(actions), "needs": sorted(needs)}
 
 
 def plan_task(raw, planner=None):
@@ -97,7 +116,11 @@ def plan_task(raw, planner=None):
         raise ValueError("needs must be a list of strings")
     # Only caller-supplied state is authoritative. The planner cannot invent it.
     task.update(actions=sorted(set(actions)), needs=sorted(set(needs)))
-    task["planning"] = {"method": origin, "matched_rules": matched}
+    # MatchedAction when nonempty; UnknownParaphrase when regex/model found none.
+    match_kind = "MatchedAction" if task["actions"] else "UnknownParaphrase"
+    if origin == "caller_supplied" and task["actions"]:
+        match_kind = "MatchedAction"
+    task["planning"] = {"method": origin, "matched_rules": matched, "action_match": match_kind}
     return task
 
 
@@ -112,10 +135,17 @@ def applicability(memory, task):
     applies = memory.get("applies", {})
     wanted = applies.get("actions_any", [])
     reasons, uncertainties = [], []
-    if wanted and not set(wanted).intersection(task["actions"]):
-        return "inapplicable", ["Action does not match activation conditions"], []
     if wanted:
-        reasons.append("Action trigger: " + ", ".join(sorted(set(wanted) & set(task["actions"]))))
+        overlap = set(wanted) & set(task["actions"])
+        if not task["actions"]:
+            # UnknownParaphrase: do not auto-disqualify on empty task actions.
+            uncertainties.append(
+                "UnknownParaphrase: task actions unrecognized; memory activation not verified"
+            )
+        elif not overlap:
+            return "inapplicable", ["KnownIncompatible: action does not match activation conditions"], []
+        else:
+            reasons.append("Action trigger: " + ", ".join(sorted(overlap)))
     state = task["state"]
     for key, value in applies.get("state_equals", {}).items():
         if key not in state or state[key] is None:
@@ -246,7 +276,6 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
         backend = "BM25 + model embeddings, reciprocal rank fusion"
     max_score = max(scores.values(), default=0) or 1
     needs = set(task["needs"])
-    exact = scope_key(task)
     candidates = []
     for mid, m in pool.items():
         score = scores[mid] / max_score
@@ -263,16 +292,18 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
             if checks[mid][0] == "conditional":
                 score *= .65
                 reasons += checks[mid][2]
-        # Sparse ancestor layers (lab-wide / project baseline) always enter the pack.
-        standing = scope_key(m) != exact
-        if standing and score <= 0:
-            score = 0.05
-            reasons.append("Standing layer rule (always included)")
-        if score > 0:
+        # Explicit standing_rule kind only. Ancestor scope alone is not mandatory.
+        if m.get("kind") == "standing_rule":
+            if score <= 0:
+                score = 0.05
+            reasons.append("Standing rule (reserved policy lane)")
             candidates.append(mid)
             trace[mid].update(stage="candidate", reasons=reasons, score=round(score, 5))
-    # Lab-wide first, then project baseline, then ticket; score breaks ties within a layer.
-    candidates.sort(key=lambda mid: (layer_rank(eligible[mid]), -trace[mid]["score"], mid))
+        elif score > 0:
+            candidates.append(mid)
+            trace[mid].update(stage="candidate", reasons=reasons, score=round(score, 5))
+    # Usefulness only. Scope already filtered eligibility; it does not rank.
+    candidates.sort(key=lambda mid: (-trace[mid]["score"], mid))
     # Conflicting assertions are surfaced even if only one side wins lexical ranking.
     by_assertion = {}
     for mid, m in pool.items():
@@ -299,6 +330,9 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
     # Reserve space for need-status reporting; it is part of the actual emitted budget.
     reserved = 100 + 35 * len(needs) + 35 * len(conflicts)
     available = max(0, budget - estimated_tokens(prefix) - reserved)
+    policy_cap = min(max(int(available * STANDING_RESERVE_RATIO), STANDING_MIN_TOKENS), STANDING_MAX_TOKENS)
+    policy_used = 0
+
     def bundle(mid, visited=None):
         visited = set() if visited is None else visited
         if mid in visited or mid in selected_ids:
@@ -314,34 +348,53 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
                 missing += gaps
         result.append(mid)
         return result, missing
-    pending = list(candidates)
-    while pending:
-        # Cover new needs before buying redundant context; baseline retains retrieval order.
-        if strategy == "targeted":
-            covered = {n for mid in selected_ids for n in eligible[mid]["need_tags"]}
-            pending.sort(key=lambda mid: (layer_rank(eligible[mid]),
-                                          -(trace[mid]["score"] + 2 * len((needs - covered) & set(pool[mid]["need_tags"]))),
-                                          mid))
-        mid = pending.pop(0)
-        if mid in selected_ids:
-            continue
+
+    def admit(mid, *, policy_lane):
+        nonlocal policy_used
         members, missing = bundle(mid)
         if missing:
             trace[mid].update(stage="dependency_blocked", reasons=trace[mid]["reasons"] + ["Unavailable dependencies: " + ", ".join(missing)])
             dependency_gaps.append({"id": mid, "missing": missing})
-            continue
+            return False
         additions = [memory_block(eligible[x], checks[x] if strategy == "targeted" else None) for x in members]
         cost = estimated_tokens("\n\n".join(blocks + additions))
-        if cost > available:
+        lane_cost = estimated_tokens("\n\n".join(additions))
+        if policy_lane:
+            if policy_used + lane_cost > policy_cap or cost > available:
+                raise ValueError(
+                    "MandatoryPolicyOverflow: standing_rule bundle exceeds reserved policy allowance; "
+                    "raise budget or shorten standing rules"
+                )
+            policy_used += lane_cost
+        elif cost > available:
             trace[mid].update(stage="budget_excluded", reasons=trace[mid]["reasons"] + ["Complete evidence bundle exceeds remaining budget"])
             budget_omissions.append(mid)
-            continue
+            return False
         for x, block in zip(members, additions):
             selected_ids.append(x)
             blocks.append(block)
             trace[x]["stage"] = "selected"
             if x != mid:
                 trace[x]["reasons"].append("Required evidence dependency of " + mid)
+        return True
+
+    policy = [mid for mid in candidates if eligible[mid].get("kind") == "standing_rule"]
+    evidence = [mid for mid in candidates if eligible[mid].get("kind") != "standing_rule"]
+    for mid in policy:
+        if mid not in selected_ids:
+            admit(mid, policy_lane=True)
+    pending = list(evidence)
+    while pending:
+        # Cover new needs before buying redundant context. No layer_rank.
+        if strategy == "targeted":
+            covered = {n for mid in selected_ids for n in eligible[mid]["need_tags"]}
+            pending.sort(key=lambda mid: (
+                -(trace[mid]["score"] + 2 * len((needs - covered) & set(pool[mid]["need_tags"]))),
+                mid))
+        mid = pending.pop(0)
+        if mid in selected_ids:
+            continue
+        admit(mid, policy_lane=False)
     def assess(ids):
         assessment = []
         for need in task["needs"]:
@@ -379,7 +432,9 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
     assessment = assess(selected_ids)
     warnings = []
     if not task["actions"]:
-        warnings.append("No task action recognized. Supply actions/needs explicitly or enable a model planner.")
+        warnings.append(
+            "UnknownParaphrase: no task action recognized. Supply actions/needs explicitly or enable a model planner."
+        )
     if any(s["status"] != "evidence_present" for s in assessment):
         warnings.append("Resolve consequential evidence gaps before choosing an action.")
     warnings += [u for mid in selected_ids for u in checks[mid][2]]

@@ -58,7 +58,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_allocate_ticket_format(self):
         ticket = allocate_ticket()
-        self.assertRegex(ticket, r"^work-\d{8}-\d{6}$")
+        self.assertRegex(ticket, r"^work-\d{8}-\d{6}-[0-9a-f]{4}$")
 
 
 if __name__ == "__main__":
