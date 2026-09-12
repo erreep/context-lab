@@ -61,13 +61,11 @@ Demo corpus project id is `fieldnote`. Omit unknown state keys. Do not treat mis
 | Intent | Tool |
 | --- | --- |
 | Save raw evidence | `memory_observe` |
-| Extract candidates with local Mem0 when requested | `memory_extract` with the source ID and exact project/ticket (up to 4000 UTF-8 bytes) |
 | Suggest a lesson for human review | `memory_propose` |
 | Report helpful / missed / irrelevant / stale | `memory_feedback` |
 
 Proposed memories stay `candidate` and cannot affect retrieval until confirmed in the local UI (`python3 start.py`).
-Mem0 extraction is explicit, not automatic transcript/vault ingestion. It preserves
-linked source evidence and existing reviews; normal recall still uses `memory_context`.
+For model-assisted candidate drafts from a source, use CLI `draft --source …` or the UI "Draft lessons" control when an endpoint is configured.
 
 ## After finishing work
 

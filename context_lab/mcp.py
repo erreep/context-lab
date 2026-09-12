@@ -29,7 +29,7 @@ TOOLS = [
          "auto-detects an Obsidian vault from the Obsidian app config (and shallow common folders) and binds it, "
          "notifying via obsidian.auto_detected. If none is found, returns needs_obsidian_vault until knowledge.vault "
          "is a vault/journal folder path or 'none'. Prefer knowledge={mode, vault?}. mode auto|empty|import|reuse for "
-         "ticket notes. refresh=true rescans ticket notes. Never edits notes. Independent of Mem0.",
+         "ticket notes. refresh=true rescans ticket notes. Never edits notes.",
          {"project": {"type": "string"}, "ticket": {"type": "string"},
           "knowledge": KNOWLEDGE_SCHEMA,
           "path": {"type": "string"}, "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}},
@@ -54,10 +54,6 @@ TOOLS = [
          {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"},
           "confirm_global": {"type": "boolean", "description": "Required true when project is __global__; only after explicit user approval."}},
          ["project", "title", "body"], False),
-    tool("memory_extract",
-         "Explicitly send one saved observation (max 4000 UTF-8 bytes) to local Mem0/Ollama. Persists extracted facts as candidates in the same project/ticket for human review; they cannot affect retrieval until confirmed. Repeat calls reuse extracted records. No cloud service or vault-wide ingestion.",
-         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}},
-         ["source_id", "project"], False),
     tool("memory_propose",
          "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. "
          "id is optional (server mints). Each needs an existing evidence source. Response includes activation.via=ui. "
@@ -85,9 +81,6 @@ def call(store, name, args):
         return agent_api.source(store, args["source_id"], args["project"], args.get("ticket", ""))
     if name == "memory_observe":
         return agent_api.observe(store, args)
-    if name == "memory_extract":
-        from .mem0_bridge import extract
-        return extract(store, **args)
     if name == "memory_propose":
         return agent_api.propose(store, args["memories"])
     if name == "memory_feedback":

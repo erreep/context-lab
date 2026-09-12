@@ -11,11 +11,5 @@ args = parser.parse_args()
 store = Store(args.db)
 if not store.memories() and not store.sources():
     store.seed(ROOT / "data/memories.json")
-# Best-effort: mirror sparse lab-wide standing rules into local Mem0 when available.
-try:
-    from context_lab.mem0_bridge import sync_lab_wide
-    sync_lab_wide(store)
-except Exception:
-    pass
 store.close()
 serve(args.db, port=args.port)

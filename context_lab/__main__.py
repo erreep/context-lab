@@ -43,10 +43,6 @@ def main():
     exp.add_argument("--out", required=True)
     draft = sub.add_parser("draft", help="Draft conditional lessons from one source through a configured model; does not save")
     draft.add_argument("--source", required=True)
-    extract = sub.add_parser("mem0-extract", help="Extract reviewable candidate facts from one saved source using local Mem0/Ollama")
-    extract.add_argument("--source", required=True)
-    extract.add_argument("--project", required=True)
-    extract.add_argument("--ticket", default="")
     sub.add_parser("mcp", help="Start the stdio MCP server")
     sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
     args = parser.parse_args()
@@ -99,9 +95,6 @@ def main():
             if not source:
                 raise ValueError("Unknown source_id")
             print(json.dumps(ModelEndpoint(store).draft(source), indent=2))
-        elif args.command == "mem0-extract":
-            from .mem0_bridge import extract
-            print(json.dumps(extract(store, args.source, args.project, args.ticket), indent=2))
         else:
             adapter = ModelEndpoint(store) if args.embeddings or args.model_planner else None
             options = {"embeddings": adapter if args.embeddings else None, "planner": adapter if args.model_planner else None}

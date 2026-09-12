@@ -85,12 +85,6 @@ class HTTPTests(unittest.TestCase):
             self.request("/api/source", {"project": "p", "title": "x", "body": "x"}, {"Origin": "https://unrelated.example"})
         self.assertEqual(result.exception.code, 403)
 
-    def test_mem0_rejects_wrong_ticket_before_extraction(self):
-        with self.assertRaises(urllib.error.HTTPError) as result:
-            self.request("/api/mem0-extract", {"source_id": "src-product", "project": "fieldnote", "ticket": "OTHER-123"})
-        self.assertEqual(result.exception.code, 400)
-        self.assertIn("Source not found in this project/ticket", json.load(result.exception)["error"])
-
     def test_mcp_subprocess(self):
         messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}},
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"task": {"project": "fieldnote", "query": "Change button color", "as_of": "2026-09-12"}}}}]

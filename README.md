@@ -4,7 +4,7 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 
 You get two surfaces that share one database:
 
-- **Agent integration (primary).** A stdio MCP server with nine tools for initiate, recall, observe, propose, and feedback.
+- **Agent integration (primary).** A stdio MCP server with eight tools for initiate, recall, observe, propose, and feedback.
 - **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
 
 Default install uses the Python standard library only. There is no pip package yet. Python 3.10+ is required. Tested here with 3.12.
@@ -75,7 +75,7 @@ Candidates never affect retrieval until you confirm them in the workbench. A pri
 3. **Recall before deciding** (`memory_context` with query, project, optional ticket, actions, needs, and known state).
 4. **Read evidence** when a condition or rationale matters (`memory_source`).
 5. **Record observations** after work (`memory_observe`).
-6. **Propose generalizations** as candidates (`memory_propose`). Optional Mem0-assisted extraction (`memory_extract`).
+6. **Propose generalizations** as candidates (`memory_propose`). Optional model-assisted drafts via `draft` when an endpoint is configured.
 7. **Report outcomes** using the `run_id` from context (`memory_feedback`).
 
 Suggested instruction block for agent prompts:
@@ -92,7 +92,6 @@ Suggested instruction block for agent prompts:
 | `memory_context` | Build a targeted context packet from layered scopes; saves a run snapshot |
 | `memory_source` | Read immutable evidence by ID within scope |
 | `memory_observe` | Append an observation source (evidence only) |
-| `memory_extract` | Run local Mem0/Ollama extraction on one saved observation into candidates |
 | `memory_propose` | Store structured candidate memories for human review |
 | `memory_feedback` | Report helpful/missed/irrelevant/stale and diagnose pipeline stage |
 
@@ -280,7 +279,6 @@ For complete recovery, retain the SQLite database. JSON export includes snapshot
 
 - Model-assisted task planning and drafting candidate lessons from a source
 - Exact-excerpt validation and cached model embeddings when an endpoint is configured
-- Local Mem0 extraction bridge into candidates
 
 **Scaffold**
 
@@ -316,21 +314,7 @@ python3 -m context_lab draft --source src-incident
 python3 -m context_lab context --task examples/task.json --model-planner --embeddings
 ```
 
-Drafting returns candidate JSON without saving it. No reward learning, automatic promotion, or background scheduler runs.
-
-## Optional Mem0 extraction
-
-Mem0 is not required and uses a separate store under `<database-filename>.mem0/`. Context Lab loads Mem0 only for the extraction worker. The core app runs without it.
-
-When Ollama and optional packages are installed locally, you can extract candidate facts from a single saved observation (max 4000 UTF-8 bytes):
-
-- MCP: `memory_extract`
-- CLI: `python3 -m context_lab mem0-extract --source SOURCE_ID --project my-project --ticket PROJ-123`
-- UI: extract control on a saved observation (after optional `.venv` setup)
-
-This is an explicit one-way extraction bridge, not two-way synchronization or background conversation capture. Unreviewed Mem0 output is never injected directly into context. Repeat calls reuse persisted extraction results without overwriting reviewed candidates. One worker at a time per Mem0 store.
-
-For a standalone Mem0 sandbox without changing the dependency-free default, see `examples/mem0_local.py`.
+Drafting returns candidate JSON without saving it. Use the UI "Draft lessons" control or `memory_propose` to save reviewed candidates. No reward learning, automatic promotion, or background scheduler runs.
 
 ## Evaluation
 
@@ -365,7 +349,6 @@ The UI benchmark runs the bundled suite against the open store. Fictional labels
 | `python3 -m context_lab import …` / `export …` | JSON batch IO |
 | `python3 -m context_lab draft --source …` | Model-assisted candidate draft |
 | `python3 -m context_lab benchmark …` | Run the comparison suite |
-| `python3 -m context_lab mem0-extract …` | Optional Mem0 extraction |
 | `python3 -m context_lab mcp` | Start the stdio MCP server |
 | `python3 -m context_lab demo` | Seed the synthetic demo corpus without replacing existing memories |
 
