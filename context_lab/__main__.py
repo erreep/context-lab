@@ -45,7 +45,15 @@ def main():
     draft.add_argument("--source", required=True)
     sub.add_parser("mcp", help="Start the stdio MCP server")
     sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
+    from .hooks import build_parser as build_hook_parser, dispatch as dispatch_hook
+    build_hook_parser(sub)
     args = parser.parse_args()
+    if args.command == "hook":
+        try:
+            return dispatch_hook(args)
+        except (ValueError, KeyError, OSError) as e:
+            print("Error: " + str(e), file=sys.stderr)
+            return 1
     store = Store(args.db)
     try:
         if args.command == "demo":
