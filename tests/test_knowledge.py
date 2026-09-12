@@ -115,7 +115,7 @@ class KnowledgeTests(unittest.TestCase):
     def test_cli_and_mcp_setup_across_processes(self):
         script = ROOT / "skills/context-lab/scripts/context_lab.py"
         cmd = [sys.executable, str(script), "--db", self.db, "initiate", "--project", "course", "--ticket", "T-123"]
-        result = subprocess.run(cmd + ["--path", str(self.notes)], cwd=self.root, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd + ["--path", str(self.notes), "--no-vault"], cwd=self.root, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "initialized")
         messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},

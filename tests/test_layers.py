@@ -66,6 +66,20 @@ class LayerTests(unittest.TestCase):
                    {"source_id": source["id"], "project": "course", "ticket": "T-1"})
         self.assertEqual(got["id"], source["id"])
 
+    def test_standing_layers_always_included_even_without_lexical_hit(self):
+        self._confirmed(GLOBAL_PROJECT, "", "g-stand", "No AI trailers",
+                        "Never Co-Authored-By Claude ChatGPT Codex", confirm_global=True)
+        self._confirmed("course", "", "p-stand", "Offline cache", "Always prefer offline cache")
+        packet = compile_context(self.store, {
+            "project": "course", "ticket": "T-9",
+            "query": "Commit dashboard lazy-loading optimization for picnic startup",
+        }, persist=False)
+        selected = [m["id"] for m in packet["selected"]]
+        self.assertIn("g-stand", selected)
+        self.assertIn("p-stand", selected)
+        self.assertIn("Standing layer rule (always included)",
+                      next(m["selection_reasons"] for m in packet["selected"] if m["id"] == "g-stand"))
+
     def test_info_lists_inherited(self):
         self._confirmed(GLOBAL_PROJECT, "", "g3", "Rule", "lab rule", confirm_global=True)
         self._confirmed("course", "", "p2", "Base", "project rule")

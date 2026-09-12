@@ -60,9 +60,15 @@ def plan_task(raw, planner=None):
     task["project"], task["ticket"] = scope_key(task)
     task.setdefault("state", {})
     if not isinstance(task["state"], dict):
-        raise ValueError("Task state must be an object")
-    if any(not isinstance(k, str) or isinstance(v, (list, dict)) for k, v in task["state"].items()):
-        raise ValueError("Task state values must be JSON scalars; use null or omit a key for unknown")
+        raise ValueError("Task state must be an object of scalar values")
+    bad = [k for k, v in task["state"].items()
+           if not isinstance(k, str) or isinstance(v, (list, dict))]
+    if bad:
+        raise ValueError(
+            "Task state values must be JSON scalars (string, number, bool, or null); "
+            "lists/objects are rejected. Summarize as counts or short strings. Bad keys: "
+            + ", ".join(bad)
+        )
     task.setdefault("as_of", date.today().isoformat())
     checked_date(task["as_of"])
     rules = catalog()
@@ -240,6 +246,7 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
         backend = "BM25 + model embeddings, reciprocal rank fusion"
     max_score = max(scores.values(), default=0) or 1
     needs = set(task["needs"])
+    exact = scope_key(task)
     candidates = []
     for mid, m in pool.items():
         score = scores[mid] / max_score
@@ -256,6 +263,11 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
             if checks[mid][0] == "conditional":
                 score *= .65
                 reasons += checks[mid][2]
+        # Sparse ancestor layers (lab-wide / project baseline) always enter the pack.
+        standing = scope_key(m) != exact
+        if standing and score <= 0:
+            score = 0.05
+            reasons.append("Standing layer rule (always included)")
         if score > 0:
             candidates.append(mid)
             trace[mid].update(stage="candidate", reasons=reasons, score=round(score, 5))

@@ -186,6 +186,18 @@ class Store:
                               scope_key({"project": project, "ticket": ticket})).fetchone()
         return json.loads(row[0]) if row else None
 
+    def put_knowledge_base(self, record):
+        """Upsert a knowledge-base payload (documents included). Used for vault binding on project baseline."""
+        if not isinstance(record, dict):
+            raise ValueError("Knowledge base must be a JSON object")
+        project, ticket = scope_key(record)
+        payload = dict(record, project=project, ticket=ticket)
+        with self.db:
+            self.db.execute(
+                "INSERT INTO knowledge_bases VALUES (?,?,?) ON CONFLICT(project,ticket) DO UPDATE SET payload=excluded.payload",
+                (project, ticket, json.dumps(payload)))
+        return {k: v for k, v in payload.items() if k != "documents"}
+
     def knowledge_bases(self):
         return [{k: v for k, v in json.loads(r[0]).items() if k != "documents"}
                 for r in self.db.execute("SELECT payload FROM knowledge_bases ORDER BY project,ticket")]

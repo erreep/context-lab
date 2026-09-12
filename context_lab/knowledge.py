@@ -9,9 +9,178 @@ from pathlib import Path
 
 from .store import now, scope_key
 
+# Lab-wide Obsidian/journal root (first OS touch for this DB). Not a retrieval layer.
+LAB_VAULT_PROJECT = "__lab__"
+
 
 def allocate_ticket():
     return "work-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+
+def empty_kb_record(project, ticket=""):
+    timestamp = now()
+    return {"project": project, "ticket": ticket, "path": None,
+            "initialized_at": timestamp, "indexed_at": timestamp, "documents": [],
+            "note_count": 0, "chunk_count": 0, "categories": {}, "skipped": {}}
+
+
+def discover_obsidian_vaults():
+    """Return [{path, ts, open}] from Obsidian's config, then shallow common folders.
+
+    Prefer reading obsidian.json (O(vaults)) over grepping the disk.
+    """
+    found = {}
+    config_paths = [
+        Path.home() / "Library/Application Support/obsidian/obsidian.json",
+        Path.home() / ".config/obsidian/obsidian.json",
+    ]
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        config_paths.append(Path(appdata) / "obsidian" / "obsidian.json")
+    for config in config_paths:
+        if not config.is_file():
+            continue
+        try:
+            data = json.loads(config.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        vaults = data.get("vaults")
+        if not isinstance(vaults, dict):
+            continue
+        for meta in vaults.values():
+            if not isinstance(meta, dict):
+                continue
+            raw = meta.get("path")
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            root = Path(raw).expanduser()
+            if not root.is_dir():
+                continue
+            key = str(root.resolve())
+            found[key] = {
+                "path": key,
+                "ts": int(meta.get("ts") or 0),
+                "open": bool(meta.get("open")),
+            }
+    # Shallow fallback: one level under common parents looking for .obsidian/
+    for parent in (Path.home() / "Documents" / "Vaults", Path.home() / "Documents", Path.home() / "Obsidian"):
+        if not parent.is_dir():
+            continue
+        try:
+            children = list(parent.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_dir() or not (child / ".obsidian").is_dir():
+                continue
+            key = str(child.resolve())
+            found.setdefault(key, {"path": key, "ts": 0, "open": False})
+    return sorted(found.values(), key=lambda v: (not v["open"], -v["ts"], v["path"]))
+
+
+def pick_discovered_vault(vaults):
+    if not vaults:
+        return None
+    open_ones = [v for v in vaults if v["open"]]
+    return (open_ones or vaults)[0]["path"]
+
+
+def vault_binding(store, project=None):
+    """Lab-wide vault/journal root for this DB (ignores project; kept for call-site compat)."""
+    baseline = store.knowledge_base(LAB_VAULT_PROJECT, "")
+    if not baseline:
+        return {"state": "undecided", "path": None}
+    if baseline.get("vault_declined"):
+        return {"state": "declined", "path": None}
+    raw = baseline.get("vault_path")
+    if isinstance(raw, str) and raw.strip():
+        return {"state": "bound", "path": str(Path(raw).expanduser().resolve())}
+    return {"state": "undecided", "path": None}
+
+
+def obsidian_info(binding, auto_detected=False):
+    """Always-on initiate field. Journaling available only when a journal root is bound."""
+    if binding["state"] == "bound":
+        reason = f"Obsidian vault / journal root bound at {binding['path']}."
+        if auto_detected:
+            reason = f"Auto-detected Obsidian vault at {binding['path']} and bound it for this machine."
+        return {
+            "journaling": "available",
+            "reason": reason,
+            "hint": "Session journals (opt-in) write under {vault}/Cl/{datetime}/. Importer skips Cl/.",
+            "auto_detected": auto_detected,
+        }
+    if binding["state"] == "declined":
+        return {
+            "journaling": "unavailable",
+            "reason": "No Obsidian vault or journal location provided, so Obsidian journaling is not available.",
+            "hint": "To enable journaling later, pass knowledge.vault as a vault root or any folder where journals may be saved, or 'none' to keep journaling off.",
+            "auto_detected": False,
+        }
+    return {
+        "journaling": "unavailable",
+        "reason": "No Obsidian vault found on this machine, so Obsidian journaling is not available.",
+        "hint": "Provide knowledge.vault as your Obsidian vault root (or any folder for journals), or 'none' if you do not want journaling.",
+        "auto_detected": False,
+    }
+
+
+def apply_vault_binding(store, vault, project=None):
+    """Persist lab-wide vault/journal-root decision. vault is a path string or 'none'."""
+    if not isinstance(vault, str) or not vault.strip():
+        raise ValueError("knowledge.vault must be a nonempty path or 'none'")
+    baseline = store.knowledge_base(LAB_VAULT_PROJECT, "") or empty_kb_record(LAB_VAULT_PROJECT, "")
+    if vault.strip().lower() == "none":
+        baseline["vault_path"] = None
+        baseline["vault_declined"] = True
+        baseline["vault_auto_detected"] = False
+    else:
+        root = Path(vault).expanduser().resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError("knowledge.vault must be an existing directory (vault root or journal location)")
+        baseline["vault_path"] = str(root)
+        baseline["vault_declined"] = False
+        baseline["vault_auto_detected"] = False
+    store.put_knowledge_base(baseline)
+    return vault_binding(store)
+
+
+def ensure_lab_vault(store, vault_arg=None):
+    """Resolve lab vault on first OS touch: explicit arg, else auto-detect, else undecided.
+
+    Returns (binding, auto_detected). Explicit vault_arg always wins (attach after decline).
+    """
+    if vault_arg is not None:
+        return apply_vault_binding(store, vault_arg), False
+    binding = vault_binding(store)
+    if binding["state"] != "undecided":
+        return binding, False
+    discovered = pick_discovered_vault(discover_obsidian_vaults())
+    if discovered:
+        baseline = store.knowledge_base(LAB_VAULT_PROJECT, "") or empty_kb_record(LAB_VAULT_PROJECT, "")
+        baseline["vault_path"] = discovered
+        baseline["vault_declined"] = False
+        baseline["vault_auto_detected"] = True
+        store.put_knowledge_base(baseline)
+        return vault_binding(store), True
+    return binding, False
+
+
+def require_journal_available(store, project=None):
+    binding = vault_binding(store)
+    info = obsidian_info(binding)
+    if info["journaling"] != "available":
+        raise ValueError(info["reason"] + " " + info["hint"])
+    return Path(binding["path"])
+
+
+def with_obsidian(result, store, project=None, auto_detected=False):
+    binding = vault_binding(store)
+    out = dict(result)
+    out["obsidian"] = obsidian_info(binding, auto_detected=auto_detected)
+    if binding["path"]:
+        out["vault_path"] = binding["path"]
+    return out
 
 
 CATEGORIES = {

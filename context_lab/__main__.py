@@ -17,8 +17,10 @@ def main():
     setup = sub.add_parser("initiate", help="Check or initialize a project/ticket knowledge base once")
     setup.add_argument("--project", required=True)
     setup.add_argument("--ticket", default="")
-    setup.add_argument("--path", help="Local Markdown/text folder, including an Obsidian folder")
-    setup.add_argument("--empty", action="store_true", help="Initialize without existing notes")
+    setup.add_argument("--path", help="Local Markdown/text folder for ticket notes (not necessarily the vault root)")
+    setup.add_argument("--empty", action="store_true", help="Initialize ticket notes without existing files")
+    setup.add_argument("--vault", help="Obsidian vault root path (required on first project touch unless --no-vault)")
+    setup.add_argument("--no-vault", action="store_true", help="Explicitly decline an Obsidian vault (journaling unavailable)")
     setup.add_argument("--refresh", action="store_true", help="Explicitly refresh an existing snapshot")
     web = sub.add_parser("serve", help="Run the local inspection UI")
     web.add_argument("--port", type=int, default=8765)
@@ -53,8 +55,25 @@ def main():
         if args.command == "demo":
             print(json.dumps(store.seed(ROOT / "data/memories.json")))
         elif args.command == "initiate":
-            from .knowledge import initiate
-            print(json.dumps(initiate(store, args.project, args.ticket, args.path, args.empty, args.refresh), indent=2))
+            from .agent_api import initiate
+            if args.vault and args.no_vault:
+                raise SystemExit("Use --vault or --no-vault, not both")
+            knowledge = {}
+            if args.no_vault:
+                knowledge["vault"] = "none"
+            elif args.vault:
+                knowledge["vault"] = args.vault
+            if args.empty:
+                knowledge["mode"] = "empty"
+            elif args.path:
+                knowledge["mode"] = "import"
+                knowledge["path"] = args.path
+            elif knowledge.get("vault") and not args.ticket:
+                pass  # vault-only baseline configure
+            else:
+                knowledge["mode"] = "auto"
+            print(json.dumps(initiate(store, args.project, args.ticket, knowledge=knowledge or None,
+                                      refresh=args.refresh), indent=2))
         elif args.command == "serve":
             from .server import serve
             serve(args.db, port=args.port)

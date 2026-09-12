@@ -6,17 +6,15 @@ No HTTP MCP transport, notifications, resources, or background tasks.
 import json
 import sys
 
-from .engine import compile_context
-from .knowledge import allocate_ticket, initiate
-from .store import scope_covers, scope_key
-
-
-TASK = {"type": "object", "properties": {
-    "query": {"type": "string"}, "project": {"type": "string"},
-    "ticket": {"type": "string", "description": "Exact ticket ID; omit for project baseline. Retrieval also includes project baseline and sparse lab-wide (__global__) memories. Other tickets stay excluded."},
-    "actions": {"type": "array", "items": {"type": "string"}},
-    "needs": {"type": "array", "items": {"type": "string"}},
-    "state": {"type": "object"}, "as_of": {"type": "string"}}, "required": ["query", "project"]}
+from . import agent_api
+from .schemas import (
+    GATE_TEXT,
+    KNOWLEDGE_SCHEMA,
+    MEMORY_DRAFT_SCHEMA,
+    TASK_SCHEMA,
+    AgentError,
+    error_payload,
+)
 
 
 def tool(name, description, properties, required, read_only=True):
@@ -26,25 +24,48 @@ def tool(name, description, properties, required, read_only=True):
 
 
 TOOLS = [
-    tool("memory_initiate", "Check or initialize a project/ticket knowledge base. Call with project/ticket first: existing setup returns already_initialized. Otherwise ask for a local notes folder (path) or empty=true. Categorizes and indexes Markdown/text locally; session journals under Cl/ are never indexed. Repeat calls reuse setup; refresh=true explicitly rescans. Never edits the notes.",
-         {"project": {"type": "string"}, "ticket": {"type": "string"}, "path": {"type": "string"},
-          "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}}, ["project"], False),
-    tool("memory_allocate_ticket", "Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC) when the user wants Obsidian notes and memories but has no ticket yet.",
+    tool("memory_initiate",
+         "Check or initialize a project/ticket knowledge base. On first OS touch for this DB, Context Lab "
+         "auto-detects an Obsidian vault from the Obsidian app config (and shallow common folders) and binds it, "
+         "notifying via obsidian.auto_detected. If none is found, returns needs_obsidian_vault until knowledge.vault "
+         "is a vault/journal folder path or 'none'. Prefer knowledge={mode, vault?}. mode auto|empty|import|reuse for "
+         "ticket notes. refresh=true rescans ticket notes. Never edits notes. Independent of Mem0.",
+         {"project": {"type": "string"}, "ticket": {"type": "string"},
+          "knowledge": KNOWLEDGE_SCHEMA,
+          "path": {"type": "string"}, "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}},
+         ["project"], False),
+    tool("memory_allocate_ticket",
+         "Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC) when the user wants Obsidian notes and memories but has no ticket yet.",
          {}, []),
     tool("memory_catalog", "List the supported task actions and information needs. Use these to describe your next decision.", {}, []),
-    tool("memory_context", "Build task-targeted context from layered scopes: lab-wide (__global__), then project baseline (empty ticket), then the exact ticket. Sibling tickets never mix. Supply current state and actions where known. Reports unresolved evidence needs. Read source evidence before assuming a conditional lesson applies. Does not prove task sufficiency.",
-         {"task": TASK, "budget": {"type": "integer", "minimum": 128, "maximum": 16000}}, ["task"], False),
-    tool("memory_source", "Read an immutable evidence source by ID. Allowed when the source is in the task scope or an ancestor layer (lab-wide / project baseline).",
-         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"]),
-    tool("memory_observe", "Record a source observation. This stores evidence only; it does not create a confirmed lesson. For lab-wide standing rules use project=__global__ with empty ticket and confirm_global=true only after the user explicitly approves; keep those sparse.",
+    tool("memory_context",
+         "Build task-targeted context from layered scopes: lab-wide (__global__), then project baseline (empty ticket), then the exact ticket. "
+         "Returns prose context plus selected/trace/conflicts by default. Pass detail='prose' for the compact six-key packet.",
+         {"task": TASK_SCHEMA, "budget": {"type": "integer", "minimum": 128, "maximum": 16000},
+          "detail": {"type": "string", "enum": ["full", "prose"]}},
+         ["task"], False),
+    tool("memory_source",
+         "Read an immutable evidence source by ID. Allowed when the source is in the task scope or an ancestor layer (lab-wide / project baseline).",
+         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}},
+         ["source_id", "project"]),
+    tool("memory_observe",
+         "Record a source observation. This stores evidence only; it does not create a confirmed lesson. "
+         "For lab-wide standing rules use project=__global__ with empty ticket and confirm_global=true only after the user explicitly approves; keep those sparse.",
          {"project": {"type": "string"}, "ticket": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"},
           "confirm_global": {"type": "boolean", "description": "Required true when project is __global__; only after explicit user approval."}},
          ["project", "title", "body"], False),
-    tool("memory_extract", "Explicitly send one saved observation (max 4000 UTF-8 bytes) to local Mem0/Ollama. Persists extracted facts as candidates in the same project/ticket for human review; they cannot affect retrieval until confirmed. Repeat calls reuse extracted records. No cloud service or vault-wide ingestion.",
-         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}}, ["source_id", "project"], False),
-    tool("memory_propose", "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. Each needs an existing evidence source. Lab-wide candidates need project=__global__, empty ticket, and confirm_global=true after explicit user approval; keep them sparse.",
-         {"memories": {"type": "array", "items": {"type": "object"}}}, ["memories"], False),
-    tool("memory_feedback", "Record reported helpful, missed, irrelevant or stale memory and diagnose the pipeline stage from a run snapshot. Feedback is not verified ground truth and does not auto-promote lessons.",
+    tool("memory_extract",
+         "Explicitly send one saved observation (max 4000 UTF-8 bytes) to local Mem0/Ollama. Persists extracted facts as candidates in the same project/ticket for human review; they cannot affect retrieval until confirmed. Repeat calls reuse extracted records. No cloud service or vault-wide ingestion.",
+         {"source_id": {"type": "string"}, "project": {"type": "string"}, "ticket": {"type": "string"}},
+         ["source_id", "project"], False),
+    tool("memory_propose",
+         "Store structured candidate memories for review in the local UI. All proposed records remain candidates and cannot influence retrieval until confirmed there. "
+         "id is optional (server mints). Each needs an existing evidence source. Response includes activation.via=ui. "
+         "Lab-wide candidates need project=__global__, empty ticket, and confirm_global=true after explicit user approval; keep them sparse.",
+         {"memories": {"type": "array", "items": MEMORY_DRAFT_SCHEMA, "minItems": 1}},
+         ["memories"], False),
+    tool("memory_feedback",
+         "Record reported helpful, missed, irrelevant or stale memory and diagnose the pipeline stage from a run snapshot. Feedback is not verified ground truth and does not auto-promote lessons.",
          {"run_id": {"type": "string"}, "memory_id": {"type": "string"},
           "observation": {"type": "string", "enum": ["helpful", "missed", "irrelevant", "stale"]}, "note": {"type": "string"}},
          ["run_id", "memory_id", "observation"], False),
@@ -53,35 +74,25 @@ TOOLS = [
 
 def call(store, name, args):
     if name == "memory_initiate":
-        return initiate(store, **args)
+        return agent_api.initiate(store, **args)
     if name == "memory_allocate_ticket":
-        return {"ticket": allocate_ticket()}
+        return agent_api.allocate_ticket()
     if name == "memory_catalog":
-        from .engine import catalog
-        return catalog()
+        return agent_api.list_catalog()
     if name == "memory_context":
-        p = compile_context(store, args["task"], budget=args.get("budget", 1200))
-        return {k: p[k] for k in ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps")}
+        return agent_api.context(store, args["task"], budget=args.get("budget", 1200), detail=args.get("detail", "full"))
     if name == "memory_source":
-        s = store.source(args["source_id"])
-        if not s or not scope_covers(s, args):
-            raise ValueError("Source not found in this project/ticket or an ancestor layer")
-        return s
+        return agent_api.source(store, args["source_id"], args["project"], args.get("ticket", ""))
     if name == "memory_observe":
-        return store.add_source(args)
+        return agent_api.observe(store, args)
     if name == "memory_extract":
         from .mem0_bridge import extract
         return extract(store, **args)
     if name == "memory_propose":
-        entries = []
-        for item in args["memories"]:
-            if store.memory(item.get("id")):
-                raise ValueError("Use a new candidate ID; existing memories are revised through review")
-            entries.append(dict(item, status="candidate"))
-        return {"memories": store.put_memories(entries)}
+        return agent_api.propose(store, args["memories"])
     if name == "memory_feedback":
-        return store.log_feedback(args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
-    raise ValueError("Unknown tool")
+        return agent_api.feedback(store, args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
+    raise AgentError("unknown_tool", f"Unknown tool: {name}")
 
 
 def serve_mcp(store, instream=None, outstream=None):
@@ -107,7 +118,8 @@ def serve_mcp(store, instream=None, outstream=None):
                 requested = params.get("protocolVersion")
                 result = {"protocolVersion": requested if requested in supported else "2025-11-25",
                           "capabilities": {"tools": {"listChanged": False}},
-                          "serverInfo": {"name": "context-lab", "version": "0.1.0"}}
+                          "serverInfo": {"name": "context-lab", "version": "0.1.0"},
+                          "instructions": GATE_TEXT}
                 initialized = True
             elif method == "ping":
                 result = {}
@@ -127,8 +139,8 @@ def serve_mcp(store, instream=None, outstream=None):
                         raise ValueError("arguments must be an object")
                     data = call(store, params["name"], args)
                     result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}
-                except (ValueError, TypeError, KeyError, OSError) as e:
-                    result = {"content": [{"type": "text", "text": str(e)}], "isError": True}
+                except (AgentError, ValueError, TypeError, KeyError, OSError) as e:
+                    result = {"content": [{"type": "text", "text": json.dumps(error_payload(e))}], "isError": True}
             else:
                 response = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}
                 outstream.write(json.dumps(response) + "\n")

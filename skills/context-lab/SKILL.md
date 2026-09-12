@@ -24,24 +24,26 @@ select Context Lab in the skills picker and write `/initiate`.
      other ticket from here on. Tell the user the generated id.
    - If **no**, omit `ticket` for a true project-only knowledge base.
    Never invent a ticket silently without that confirmation.
-4. Call `memory_initiate` with just `project` and `ticket` first.
-   `already_initialized` means resume: show the saved folder and note count,
-   keep the scope for this conversation, and skip the setup questions and import.
-   This check works across conversations and application restarts.
-5. For `needs_knowledge_base`, ask whether the user has existing notes for this
-   scope. Suggested choices are “Use an existing folder” and “Start empty”.
-   For a ticket scope, prefer a dedicated folder such as
-   `.../Vaults/.../Ticket-<id>`. Do not broaden to the whole vault.
-6. **Optional journal (default no):** ask whether to also keep a human-readable
-   session journal under `{folder}/Cl/{datetimestart}/`. Only create or write that
-   tree when they opt in. The importer skips `Cl/` so journals are never indexed as
-   evidence. Full journal append tooling may arrive later; still record the choice.
-7. Call `memory_initiate` with the same identity and either `path` or `empty: true`.
-   Wait for their answer before importing. Do not read every note into the chat first.
-8. Report the saved identity (including any generated ticket), folder, imported
-   note/section counts, categories and skipped-file counts. A missing, unreadable,
-   empty or oversized folder is not successful initialization; explain the error
-   and let them choose another.
+4. On first OS touch for this Context Lab DB, vault binding is lab-wide. The server
+   auto-detects an Obsidian vault from the Obsidian app config (preferred) or shallow
+   common folders, binds it, and sets `obsidian.auto_detected: true` so you can tell
+   the user. If none is found, `memory_initiate` returns `needs_obsidian_vault` with
+   `obsidian.journaling: "unavailable"`. Ask for a vault root **or** any folder where
+   journals may be saved (`knowledge.vault`), or `knowledge.vault: "none"` if they do
+   not want journaling.
+5. Call `memory_initiate` with `project`, `ticket`, and `knowledge: { "mode": ... }`
+   (vault only needed when still undecided / not auto-found). Use `mode: "import"` +
+   `path` for a ticket notes folder when they named one.
+6. Read `response.obsidian`. If auto-detected, notify the user of the path. If
+   `journaling` is `"unavailable"`, say clearly that journaling will not work until
+   they provide a vault/journal folder. **Only if `journaling` is `"available"`**,
+   ask optional session journal under `{vault}/Cl/{datetimestart}/` (default no).
+7. Report identity, vault/journaling status, and import counts.
+   Mem0 is optional and unrelated. Vault/journal works without Mem0 installed.
+
+Hard gates (also in `gates.md`, MCP `initialize.instructions`, and `AGENTS.md`):
+call `memory_context` after initiate, before every git commit/push, and before
+history-dependent decisions.
 
 The importer snapshots `.md`, `.markdown` and `.txt` notes without changing the
 originals. It splits by headings and size, preserves source evidence, and assigns
@@ -63,6 +65,10 @@ Pass the same `project` and `ticket` to `memory_observe`, and on each candidate 
 `memory_propose`. A missing ticket means project baseline, never “all tickets”.
 There is no global active ticket: concurrent tasks keep their own explicit scope.
 Do not silently fall back to another ticket or project when retrieval is empty.
+
+**Mandatory recall:** after initiate/resume succeeds, call `memory_context` for the
+next planned action before other work. Always call it again before `git commit` or
+`git push`. Setup alone does not load lab-wide or baseline standing rules.
 
 **Lab-wide standing rules** (`project=__global__`, empty ticket) apply to every
 project. Keep them extremely sparse (examples: “when finishing a project, run
