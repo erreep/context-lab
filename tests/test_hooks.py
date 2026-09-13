@@ -145,9 +145,11 @@ class HookOptInTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         paths = (".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json")
         ignored = (root / ".gitignore").read_text().splitlines()
+        self.assertIn(".claude/settings.json", ignored)
+        self.assertIn(".codex/hooks.json", ignored)
+        self.assertIn(".cursor/", ignored)
         for relative in paths:
             self.assertFalse((root / relative).exists(), relative)
-            self.assertIn(relative, ignored)
         stdout, stderr = StringIO(), StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.assertEqual(print_config("codex"), 0)

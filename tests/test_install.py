@@ -23,7 +23,10 @@ class InstallSmokeTests(unittest.TestCase):
             shutil.copytree(
                 ROOT,
                 source,
-                ignore=shutil.ignore_patterns(".git", ".venv", "build", "workspace", "*.egg-info", "__pycache__"),
+                ignore=shutil.ignore_patterns(
+                    ".git", ".venv", "build", "workspace", "*.egg-info", "__pycache__",
+                    ".cursor", ".agents", "results",
+                ),
             )
             wheel_dir = temp / "wheel"
             wheel_dir.mkdir()
