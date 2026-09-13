@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import time
 from collections import Counter
@@ -15,7 +16,10 @@ from pathlib import Path
 from .store import GLOBAL_PROJECT, checked_date, layer_rank, scope_key, scope_layers
 from .schemas import STANDING_MAX_TOKENS, STANDING_MIN_TOKENS, STANDING_RESERVE_RATIO
 
-ROOT = Path(__file__).resolve().parent.parent
+PACKAGE_ROOT = Path(__file__).resolve().parent
+ROOT = PACKAGE_ROOT.parent
+DATA_ROOT = PACKAGE_ROOT / "data"
+DEFAULT_DB = Path(os.environ.get("CONTEXT_LAB_DB", "~/.context-lab/memory.sqlite3")).expanduser()
 STOP = set("a an and are as at be by can could for from how i in is it of on or our please that the their this to we with would you your".split())
 STRATEGIES = ("retrieval", "lessons", "targeted")
 
@@ -48,7 +52,7 @@ def bm25(query, docs):
 
 
 def catalog():
-    return json.loads((ROOT / "data" / "task_rules.json").read_text())
+    return json.loads((DATA_ROOT / "task_rules.json").read_text())
 
 
 def vocabulary(store, project):

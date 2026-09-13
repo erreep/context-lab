@@ -4,10 +4,10 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 
 You get two surfaces that share one database:
 
-- **Agent integration (primary).** A stdio MCP server with eight tools for initiate, recall, observe, propose, and feedback.
+- **Agent integration (primary).** A stdio MCP server with eleven tools for setup, recall, evidence, journalling, promotion, and feedback.
 - **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
 
-Default install uses the Python standard library only. There is no pip package yet. Python 3.10+ is required. Tested here with 3.12.
+The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
 
 ## Why Context Lab
 
@@ -15,7 +15,17 @@ Long-lived agent memory has two separate problems: preserving information, and s
 
 Evidence and reviewed memories live in SQLite. Recall layers them by scope and builds a compact packet for a specific task. Proposed lessons do not become active just because an agent wrote them. A human confirms candidates in the workbench first.
 
-## Start locally
+## Install
+
+```bash
+pipx install git+https://github.com/erreep/context-lab.git
+context-lab demo
+context-lab serve
+```
+
+Open **http://127.0.0.1:8765**. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
+
+For development from a clone:
 
 ```bash
 git clone https://github.com/erreep/context-lab
@@ -25,7 +35,7 @@ python3 start.py
 
 On Windows, use `python start.py` if that is your Python command. Open **http://127.0.0.1:8765**. Press Ctrl+C to stop. For a busy port: `python3 start.py --port 8766`.
 
-The launcher binds localhost only. Data persists to `workspace/memory.sqlite3`. An empty database is seeded once with a fictional demo corpus. Existing records are never overwritten.
+The launcher binds localhost only. An empty database is seeded once with a fictional demo corpus. Existing records are never overwritten.
 
 For a clean store without demo data:
 
@@ -52,9 +62,45 @@ Sibling tickets stay isolated. Omitting `ticket` means project baseline, not eve
 
 ## Agent integration
 
-MCP is the primary integration path. Point your agent client at the stdio server on your SQLite database.
+MCP is the primary integration path. After installation, point your agent client at the canonical stdio command:
 
-Cursor ships an example config at `.cursor/mcp.json` (database path `workspace/memory.sqlite3`). Enable the `context-lab` MCP server when prompted. Optional agent guidance lives in `.cursor/rules/context-lab-memory.mdc` and `.cursor/skills/context-lab-memory`. For a generic template, see `examples/mcp-config.json`.
+```json
+{
+  "mcpServers": {
+    "context-lab": {
+      "command": "context-lab",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Cursor ships this config at `.cursor/mcp.json`. Enable the `context-lab` MCP server when prompted. Optional agent guidance lives in `.cursor/rules/context-lab-memory.mdc` and `.cursor/skills/context-lab-memory`. For a generic template, see `examples/mcp-config.json`.
+
+### Codex plugin
+
+The repo marketplace bundles the Context Lab workflow and MCP command. Install the Python executable first, then add and install the plugin:
+
+```bash
+pipx install git+https://github.com/erreep/context-lab.git
+codex plugin marketplace add erreep/context-lab
+codex plugin add context-lab@context-lab
+```
+
+The plugin intentionally calls `context-lab mcp`; it does not hide or duplicate the local Python prerequisite. Installing the package or plugin does **not** enable hooks.
+
+Hooks are opt-in per repository. Run these commands only when you want that repository to receive ambient recall and the commit gate:
+
+```bash
+cd /path/to/project
+context-lab hook set-scope --project my-project --ticket PROJ-123
+context-lab hook install-git
+mkdir -p .codex
+context-lab hook print-config codex > .codex/hooks.json
+```
+
+Use `claude` or `cursor` instead of `codex` for those clients. Codex hooks require `[features] codex_hooks = true`.
+Setting a Context Lab scope alone never installs or enables hooks. This repository does not ship active client hook files; `hook print-config` is the explicit opt-in step.
 
 ### Hard gates
 
@@ -90,10 +136,13 @@ Suggested instruction block for agent prompts:
 | `memory_allocate_ticket` | Mint a work-unit ticket id (`work-YYYYMMDD-HHMMSS` UTC) when the user has notes but no ticket yet |
 | `memory_catalog` | List starter action and need vocabulary for task features |
 | `memory_context` | Build a targeted context packet from layered scopes; saves a run snapshot |
+| `memory_inspect_run` | Load the detailed trace for a saved recall run |
 | `memory_source` | Read immutable evidence by ID within scope |
 | `memory_observe` | Append an observation source (evidence only) |
 | `memory_propose` | Store structured candidate memories for human review |
 | `memory_feedback` | Report helpful/missed/irrelevant/stale and diagnose pipeline stage |
+| `memory_promote` | Promote a confirmed ticket memory to a project-baseline candidate |
+| `memory_journal` | Write and immediately index a durable ticket journal entry |
 
 ### Agent recall vs evaluation
 
@@ -258,7 +307,7 @@ Setup is stored in SQLite under the exact project/ticket pair. Ordinary initiati
 
 ### Importer behavior
 
-Reads UTF-8 `.md`, `.markdown`, and `.txt` without modifying source files. Splits notes at Markdown headings into bounded excerpts, assigns keyword categories from paths and headings, and indexes with the same BM25 retriever. Skips hidden files, symlinks, and unsupported formats. Does not follow links. Session journal folders under `Cl/` are skipped on import. There is no server-side journal write API yet.
+Reads UTF-8 `.md`, `.markdown`, and `.txt` without modifying source files. Splits notes at Markdown headings into bounded excerpts, assigns keyword categories from paths and headings, and indexes with the same BM25 retriever. Skips hidden files, symlinks, and unsupported formats. Does not follow links. Session journal folders under `Cl/` are skipped on import. `memory_journal` writes durable plan, decision, progress, and handoff notes under a bound ticket folder and indexes them immediately.
 
 Limits: 2 MB per note, 20 MB total, 20,000 excerpts per selected folder. Categorization is a local heuristic, not model-based classification.
 
@@ -282,15 +331,15 @@ For complete recovery, retain the SQLite database. JSON export includes snapshot
 
 **Scaffold**
 
-- Demo corpus (20 memories, 28 scenarios) and default task patterns in `data/task_rules.json`
-- Bundled benchmark cases in `data/scenarios.json`
+- Demo corpus (20 memories, 28 scenarios) and default task patterns in `context_lab/data/task_rules.json`
+- Bundled benchmark cases in `context_lab/data/scenarios.json`
 
 **Not implemented**
 
 - Automatic verified learning, nightly scheduler, or background distillation
 - Live agent action execution or learned utility ranking
 - Universal semantic conflict detection or proof of context sufficiency
-- UI-side initiate/import, MCP strategy selection, pip install, or a journaling write API
+- UI-side initiate/import, MCP strategy selection, or a published PyPI release
 
 A prompted draft is not a verified lesson. The bundled benchmark is a context-selection experiment. It does not claim improvement in real agent task completion.
 
@@ -337,6 +386,28 @@ Each case separates `task` from `expected` labels. Metrics follow explicit conve
 
 The UI benchmark runs the bundled suite against the open store. Fictional labels are not meaningful for a store containing only your own data.
 
+## Local token-usage estimates
+
+MCP and hook processes automatically record payload estimates in their existing SQLite database. No extra model calls, dependencies, or fields in tool responses are added. The meter stores counts and scope metadata, not request/response bodies.
+
+```bash
+context-lab usage --project context-lab --ticket 768
+context-lab usage --project context-lab    # all this project's tickets + baseline
+context-lab usage --json                  # all projects, including unassigned traffic
+```
+
+Use the same database as your MCP/worktree scope. For an existing checkout database:
+
+```bash
+python3 -m context_lab --db workspace/memory.sqlite3 usage --project context-lab --ticket 768
+```
+
+Counts use **ceil(UTF-8 bytes / 4)** separately for each request and response, not actual tokenizer counts or billed usage. MCP requests include the tool name and arguments; responses include returned text, including tool errors. Hooks count the injected context only (not the original user prompt), including session-start rules and the printed `recall-for` context. Initialization instructions and tool definitions are tracked separately as unassigned setup traffic. Unknown tools and malformed transport messages are excluded.
+
+Reports break down event counts and request/response estimates by project, ticket, channel, and operation. `--ticket ""` selects only the project's baseline; `--ticket` requires `--project`. Calls with only a run/memory ID use that record's scope. Mixed-scope batches and calls without a known scope stay unassigned, visible only in the unfiltered report. Injections are charged to the active ticket, even when recalling baseline rules.
+
+Restart/reconnect existing MCP processes after updating. Hook injections also require a configured worktree scope: `context-lab hook set-scope --project P --ticket T --db /path/to/memory.sqlite3`. Counting starts with updated processes; old traffic is not backfilled. Compare before/after report totals to measure a task slice. These are cumulative local payload estimates, **not net token savings or cost**: they exclude protocol framing, skill loading, client history replay, cache effects, direct CLI/UI operations (except `hook` output), and any model's own usage. Reading a report does not add meter events. Preserve the SQLite database to retain counters; JSON memory exports do not include them. A failed counter write warns on stderr without failing an otherwise completed tool call.
+
 ## CLI reference
 
 | Command | Purpose |
@@ -350,6 +421,7 @@ The UI benchmark runs the bundled suite against the open store. Fictional labels
 | `python3 -m context_lab draft --source …` | Model-assisted candidate draft |
 | `python3 -m context_lab benchmark …` | Run the comparison suite |
 | `python3 -m context_lab mcp` | Start the stdio MCP server |
+| `python3 -m context_lab usage [--project …] [--ticket …] [--json]` | Report locally estimated MCP and hook token traffic |
 | `python3 -m context_lab demo` | Seed the synthetic demo corpus without replacing existing memories |
 
 ## Persistence and backup
@@ -366,7 +438,7 @@ Feedback diagnoses capture, retrieval, selection/budget, applicability/validity,
 
 ## Project status
 
-This repository is clone-and-run source. It has no `pyproject.toml`, published package, or `LICENSE` file yet. Review those gaps before redistributing or depending on it as a library.
+This repository can be installed from source through its `pyproject.toml`, but it has no published PyPI release or `LICENSE` file yet. Review the license gap before redistributing or depending on it as a library.
 
 ## Design references
 

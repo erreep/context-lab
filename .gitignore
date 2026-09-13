@@ -4,6 +4,8 @@ workspace/
 .env
 .venv/
 *.egg-info/
+build/
+dist/
 
 # Per-repository hooks are explicit local opt-ins.
 .claude/settings.json

@@ -3,15 +3,16 @@ import json
 import sys
 from pathlib import Path
 
-from .engine import ROOT, STRATEGIES
+from .engine import DATA_ROOT, DEFAULT_DB, STRATEGIES
 from .evaluate import evaluate, markdown_report
 from .provider import ModelEndpoint
+from .schemas import AgentError
 from .store import Store
 
 
 def main():
     parser = argparse.ArgumentParser(description="Context Lab: inspect and test task-targeted agent memory")
-    parser.add_argument("--db", default=str(ROOT / "workspace" / "memory.sqlite3"))
+    parser.add_argument("--db", default=str(DEFAULT_DB))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("demo", help="Initialize the synthetic demo corpus without replacing existing memories")
     setup = sub.add_parser("initiate", help="Check or initialize a project/ticket knowledge base once")
@@ -32,9 +33,9 @@ def main():
     context.add_argument("--embeddings", action="store_true")
     context.add_argument("--model-planner", action="store_true")
     bench = sub.add_parser("benchmark", help="Run a synthetic context-selection comparison")
-    bench.add_argument("--suite", default=str(ROOT / "data/scenarios.json"))
+    bench.add_argument("--suite", default=str(DATA_ROOT / "scenarios.json"))
     bench.add_argument("--budget", type=int, default=1200)
-    bench.add_argument("--out", default=str(ROOT / "results/benchmark.json"))
+    bench.add_argument("--out", default=str(Path.cwd() / "results/benchmark.json"))
     bench.add_argument("--embeddings", action="store_true")
     bench.add_argument("--model-planner", action="store_true")
     imp = sub.add_parser("import", help="Import JSON sources and/or structured memories")
@@ -44,6 +45,10 @@ def main():
     draft = sub.add_parser("draft", help="Draft conditional lessons from one source through a configured model; does not save")
     draft.add_argument("--source", required=True)
     sub.add_parser("mcp", help="Start the stdio MCP server")
+    usage_p = sub.add_parser("usage", help="Report local estimated token traffic (not billed usage)")
+    usage_p.add_argument("--project", help="Filter to a project; includes all its tickets unless --ticket is set")
+    usage_p.add_argument("--ticket", help="Filter to an exact ticket; use an empty string for project baseline")
+    usage_p.add_argument("--json", action="store_true", help="Print structured counters")
     sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
     journal_p = sub.add_parser("journal", help="Write durable ticket journal evidence and index it")
     journal_p.add_argument("--project", required=True)
@@ -52,8 +57,16 @@ def main():
     journal_p.add_argument("--title", required=True)
     journal_p.add_argument("--body", required=True)
     from .hooks import build_parser as build_hook_parser, dispatch as dispatch_hook
+    from .scope import build_parser as build_scope_parser, dispatch as dispatch_scope
     build_hook_parser(sub)
+    build_scope_parser(sub)
     args = parser.parse_args()
+    if args.command == "scope":
+        try:
+            return dispatch_scope(args)
+        except AgentError as e:
+            print(f"Error: {e.message}", file=sys.stderr)
+            return 1
     if args.command == "hook":
         try:
             return dispatch_hook(args)
@@ -63,7 +76,7 @@ def main():
     store = Store(args.db)
     try:
         if args.command == "demo":
-            print(json.dumps(store.seed(ROOT / "data/memories.json")))
+            print(json.dumps(store.seed(DATA_ROOT / "memories.json")))
         elif args.command == "initiate":
             from .agent_api import initiate
             if args.vault and args.no_vault:
@@ -90,6 +103,10 @@ def main():
         elif args.command == "mcp":
             from .mcp import serve_mcp
             serve_mcp(store)
+        elif args.command == "usage":
+            from .usage import report, format_report
+            data = report(store, args.project, args.ticket)
+            print(json.dumps(data, indent=2) if args.json else format_report(data))
         elif args.command == "allocate-ticket":
             from .knowledge import allocate_ticket
             print(json.dumps({"ticket": allocate_ticket()}, indent=2))

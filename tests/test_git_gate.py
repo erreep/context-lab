@@ -59,6 +59,17 @@ class GitGateTests(unittest.TestCase):
     def test_missing_lease_blocks(self):
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
+    def test_recall_meter_counts_printed_context(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(recall_for(cwd=str(self.repo)), 0)
+        row = self.store.db.execute("SELECT * FROM usage_events").fetchone()
+        self.assertEqual((row["project"], row["ticket"], row["channel"], row["operation"]),
+                         ("app", "T-1", "hook", "recall-for"))
+        self.assertEqual(row["request_estimated_tokens"], 0)
+        self.assertEqual(row["response_estimated_tokens"], (len(out.getvalue().rstrip("\n").encode()) + 3) // 4)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0], 1)
+
     def test_valid_lease_allows_and_mutations_block(self):
         self.assertEqual(_recall(str(self.repo)), 0)
         self.assertEqual(gate_git(cwd=str(self.repo)), 0)
@@ -138,7 +149,7 @@ class GitGateTests(unittest.TestCase):
                                  capture_output=True, text=True, env=env)
         self.assertNotEqual(blocked.returncode, 0)
         self.assertIn("not installed", blocked.stderr)
-        self.assertIn("pipx install -e", blocked.stderr)
+        self.assertIn("pipx install git+", blocked.stderr)
         self.assertNotIn("Traceback", blocked.stderr)
 
     def test_install_git_refuses_when_hooks_path_set(self):

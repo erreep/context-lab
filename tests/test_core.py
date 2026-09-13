@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from context_lab.engine import ROOT, applicability, compile_context, estimated_tokens, plan_task
+from context_lab.engine import DATA_ROOT, applicability, compile_context, estimated_tokens, plan_task
 from context_lab.evaluate import evaluate, score_packet
 from context_lab.mcp import serve_mcp
 from context_lab.provider import ModelEndpoint
@@ -16,7 +16,7 @@ from context_lab.store import Store
 class CoreTests(unittest.TestCase):
     def setUp(self):
         self.store = Store(":memory:")
-        self.store.seed(ROOT / "data/memories.json")
+        self.store.seed(DATA_ROOT / "memories.json")
 
     def tearDown(self):
         self.store.close()

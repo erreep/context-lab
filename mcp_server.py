@@ -11,7 +11,7 @@ REPO = Path(__file__).resolve().parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from context_lab.engine import ROOT
+from context_lab.engine import DATA_ROOT, DEFAULT_DB
 from context_lab.mcp import serve_mcp
 from context_lab.store import Store
 
@@ -20,13 +20,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Context Lab stdio MCP server")
     parser.add_argument(
         "--db",
-        default=str(ROOT / "workspace" / "memory.sqlite3"),
+        default=str(DEFAULT_DB),
         help="SQLite path for sources, memories, runs and feedback",
     )
     args = parser.parse_args(argv)
     store = Store(args.db)
     if not store.memories() and not store.sources():
-        store.seed(ROOT / "data" / "memories.json")
+        store.seed(DATA_ROOT / "memories.json")
     serve_mcp(store)
 
 
