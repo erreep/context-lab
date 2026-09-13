@@ -201,7 +201,9 @@ Browse records across scopes: sparse lab-wide (`project=__global__`), project ba
 
 ### Review desk
 
-Confirm or retract candidate memories. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+Confirm or retract candidate memories. The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+
+Candidates sort by blast radius. **Must review** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
 
 ### Agent preview
 

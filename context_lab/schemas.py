@@ -20,6 +20,26 @@ Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_
 KINDS = ["fact", "constraint", "decision", "event", "lesson", "standing_rule"]
 # agent/prose = CompactView (default MCP). inspect/full = TraceView keys for workbench.
 DETAIL_LEVELS = frozenset({"agent", "prose", "inspect", "full"})
+# Workbench review desk only — not persisted. High blast-radius memories need one-at-a-time confirm.
+MUST_REVIEW_KINDS = frozenset({"constraint", "standing_rule"})
+
+
+def review_tier(memory):
+    """Derive review urgency from existing fields. Presentation only; never stored.
+
+    must  — lab-wide, baseline, constraints, standing rules (read before confirm)
+    batch — ticket-scoped facts/events/decisions/lessons (multi-confirm ok)
+    """
+    if not isinstance(memory, dict):
+        return "must"
+    project = str(memory.get("project") or "")
+    ticket = str(memory.get("ticket") or "").strip()
+    kind = str(memory.get("kind") or "")
+    if project == "__global__" or kind in MUST_REVIEW_KINDS or not ticket:
+        return "must"
+    return "batch"
+
+
 STANDING_RESERVE_RATIO = 0.25
 STANDING_MAX_TOKENS = 500
 STANDING_MIN_TOKENS = 300
