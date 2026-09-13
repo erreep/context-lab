@@ -91,16 +91,17 @@ TOOLS = [
 
 
 def _enforce_branch_scope(project, ticket=""):
-    """When the cwd worktree has a branch binding, reject mismatched project/ticket."""
+    """When cwd has a branch binding for this project, reject a mismatched ticket."""
     import os
     from .scope import BranchScopes, MemoryScope
     try:
-        BranchScopes.require_request_scope(
-            os.getcwd(), MemoryScope(project=project, ticket=ticket or ""))
-    except AgentError as e:
-        if e.code == "scope_mismatch":
-            raise
-        # unbound / detached / not a worktree → explicit MCP scope only
+        resolved = BranchScopes.resolve_current(os.getcwd())
+    except AgentError:
+        return
+    if resolved.scope.project != (project or "").strip():
+        return
+    BranchScopes.require_request_scope(
+        os.getcwd(), MemoryScope(project=project, ticket=ticket or ""))
 
 
 def call(store, name, args):
