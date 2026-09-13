@@ -143,6 +143,11 @@ class Store:
             payload TEXT NOT NULL, PRIMARY KEY(id, version));
           CREATE TABLE IF NOT EXISTS runs (
             id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY, created_at TEXT NOT NULL,
+            project TEXT, ticket TEXT, channel TEXT NOT NULL, operation TEXT NOT NULL,
+            request_estimated_tokens INTEGER NOT NULL, response_estimated_tokens INTEGER NOT NULL);
+          CREATE INDEX IF NOT EXISTS usage_scope ON usage_events(project, ticket);
           CREATE TABLE IF NOT EXISTS feedback (
             id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS embeddings (

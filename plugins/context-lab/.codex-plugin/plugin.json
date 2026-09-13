@@ -1,0 +1,28 @@
+{
+  "name": "context-lab",
+  "version": "0.1.0",
+  "description": "Task-targeted local memory and durable ticket journalling for coding agents.",
+  "author": {
+    "name": "erreep",
+    "url": "https://github.com/erreep"
+  },
+  "homepage": "https://github.com/erreep/context-lab",
+  "repository": "https://github.com/erreep/context-lab",
+  "keywords": ["memory", "mcp", "codex", "agents"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Context Lab",
+    "shortDescription": "Scoped memory and ticket journals for agents",
+    "longDescription": "Recall reviewed project knowledge before decisions and keep durable, ticket-scoped evidence journals.",
+    "developerName": "erreep",
+    "category": "Developer Tools",
+    "capabilities": ["Memory", "Journalling", "MCP"],
+    "websiteURL": "https://github.com/erreep/context-lab",
+    "defaultPrompt": [
+      "Start Context Lab for this ticket.",
+      "Recall relevant project lessons.",
+      "Journal this ticket's progress."
+    ]
+  }
+}

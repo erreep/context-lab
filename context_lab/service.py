@@ -1,7 +1,7 @@
 """Shared application operations for CLI, HTTP and MCP."""
 import os
 
-from .engine import ROOT, STRATEGIES, catalog, compile_context, plan_task
+from .engine import DATA_ROOT, STRATEGIES, catalog, compile_context, plan_task
 from .evaluate import evaluate
 from .provider import ModelEndpoint
 from .knowledge import allocate_ticket, initiate
@@ -39,7 +39,7 @@ def dispatch(store, operation, payload):
         return compile_context(store, payload.get("task", {}), payload.get("strategy", "targeted"),
                                payload.get("budget", 1200), **provider_flags(store, payload))
     if operation == "benchmark":
-        return evaluate(store, ROOT / "data" / "scenarios.json", payload.get("budget", 1200), **provider_flags(store, payload))
+        return evaluate(store, DATA_ROOT / "scenarios.json", payload.get("budget", 1200), **provider_flags(store, payload))
     if operation == "source":
         return store.add_source(payload)
     if operation == "memories":

@@ -43,4 +43,4 @@ Call `memory_context` (or rely on ambient inject where available) before:
 
 Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
 Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
-See `skills/context-lab/gates.md` and the `context-lab` skill for setup/recall.
+See `plugins/context-lab/skills/context-lab/gates.md` and the `context-lab` skill for setup/recall.

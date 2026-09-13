@@ -10,17 +10,17 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import agent_api
-from .engine import ROOT
+from . import agent_api, usage
+from .engine import DEFAULT_DB, ROOT
 from .schemas import GATE_TEXT, AgentError, wire_dumps
 from .store import Store
 
 INJECT_BUDGET = 800  # header ~175 wire tokens; one journal pick ~270. 400 dropped every pick.
 LEASE_TTL_MINUTES = 10
-SCOPE_HINT = "Run: context-lab hook set-scope --project P --ticket T"
+SCOPE_HINT = "Run: context-lab scope bind --project P --ticket T"
 RECALL_HINT = "Run: context-lab hook recall-for --purpose commit"
 CONTEXT_LAB_HOME = str(ROOT)
-INSTALL_HINT = "pipx install -e {home}  (or: pip install -e {home})"
+INSTALL_HINT = "pipx install git+https://github.com/erreep/context-lab.git"
 # Advisory only: the pre-commit hook is the enforcement point. Handles `git -C x commit`, `git -c k=v commit`.
 GIT_COMMIT_RE = re.compile(r"\bgit\s+(?:-{1,2}\S+(?:\s+[^-\s]\S*)?\s+)*commit\b")
 UNBORN_HEAD = "unborn"
@@ -67,7 +67,7 @@ def require_worktree(cwd=None):
 
 def default_db():
     # ponytail: db identity is the resolved path in v1; upgrade to a stored id in knowledge_bases.
-    return str((ROOT / "workspace" / "memory.sqlite3").resolve())
+    return str(DEFAULT_DB.resolve())
 
 
 def scope_path(cwd=None):
@@ -79,30 +79,37 @@ def lease_path(cwd=None):
 
 
 def load_scope(cwd=None):
-    path = scope_path(cwd=cwd)
-    if not path.is_file():
-        raise AgentError("missing_scope", "No context-lab scope for this worktree", hint=SCOPE_HINT)
+    """Resolve active scope from the branch binding registry (legacy scope.json is a cache)."""
+    from .scope import BranchScopes
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        raise AgentError("missing_scope", f"Invalid scope.json: {e}", hint=SCOPE_HINT) from e
-    for key in ("project", "ticket", "db"):
-        if not isinstance(data.get(key), str) or not data[key].strip():
-            raise AgentError("missing_scope", f"scope.json missing {key}", hint=SCOPE_HINT)
-    # ponytail: db identity is the resolved path in v1; upgrade to a stored id in knowledge_bases.
-    data["db"] = str(Path(data["db"]).expanduser().resolve())
-    return data
+        resolved = BranchScopes.resolve_current(cwd)
+    except AgentError as e:
+        if e.code in {"unbound_branch", "detached_head", "not_a_worktree"}:
+            raise AgentError("missing_scope", e.message, hint=SCOPE_HINT) from e
+        raise
+    return {
+        "project": resolved.scope.project,
+        "ticket": resolved.scope.ticket,
+        "db": str(resolved.database),
+        "branch": resolved.branch,
+    }
 
 
 def set_scope(project, ticket, db=None, cwd=None):
-    require_worktree(cwd)
-    # ponytail: db identity is the resolved path in v1; upgrade to a stored id in knowledge_bases.
-    resolved_db = str(Path(db or default_db()).expanduser().resolve())
-    path = scope_path(cwd=cwd)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"project": project.strip(), "ticket": ticket.strip(), "db": resolved_db}
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    return payload
+    """Bind the current branch; also refreshes legacy scope.json for migration."""
+    from .scope import BranchScopes, MemoryScope
+    resolved = BranchScopes.bind_current(
+        cwd or os.getcwd(),
+        MemoryScope(project=project, ticket=ticket),
+        database=db,
+        replace=True,
+    )
+    return {
+        "project": resolved.scope.project,
+        "ticket": resolved.scope.ticket,
+        "db": str(resolved.database),
+        "branch": resolved.branch,
+    }
 
 
 def _read_hook_stdin(raw=None):
@@ -141,12 +148,14 @@ def inject(payload=None, event_name="UserPromptSubmit"):
             budget=INJECT_BUDGET,
             detail="agent",
         )
+        text = wire_dumps(view)
+        usage.record(store, "hook", event_name, (scope["project"], scope["ticket"]), response=text)
     finally:
         store.close()
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": event_name,
-            "additionalContext": wire_dumps(view),
+            "additionalContext": text,
         }
     }, ensure_ascii=False))
     return 0
@@ -172,9 +181,10 @@ def session_start(payload=None):
             budget=INJECT_BUDGET,
             detail="agent",
         )
+        text = GATE_TEXT.strip() + "\n\n" + wire_dumps(view)
+        usage.record(store, "hook", "SessionStart", (scope["project"], scope["ticket"]), response=text)
     finally:
         store.close()
-    text = GATE_TEXT.strip() + "\n\n" + wire_dumps(view)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -225,9 +235,11 @@ def recall_for(purpose="commit", cwd=None, budget=INJECT_BUDGET):
         path = lease_path(cwd=cwd)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(lease, indent=2) + "\n", encoding="utf-8")
+        text = json.dumps(view, indent=2, ensure_ascii=False)
+        usage.record(store, "hook", "recall-for", (scope["project"], scope["ticket"]), response=text)
     finally:
         store.close()
-    print(json.dumps(view, indent=2, ensure_ascii=False))
+    print(text)
     return 0
 
 
@@ -335,7 +347,7 @@ def install_git(cwd=None):
         return 1
     home = CONTEXT_LAB_HOME
     target.write_text(PRE_COMMIT_SCRIPT.format(
-        home=shlex.quote(home), install=INSTALL_HINT.format(home=shlex.quote(home))), encoding="utf-8")
+        home=shlex.quote(home), install=INSTALL_HINT), encoding="utf-8")
     target.chmod(0o755)
     try:
         print(target.relative_to(Path(cwd)))

@@ -137,7 +137,7 @@ class HookTests(unittest.TestCase):
         })
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
-        self.assertIn("set-scope", result.stderr)
+        self.assertIn("scope bind", result.stderr)
 
 
 class HookOptInTests(unittest.TestCase):

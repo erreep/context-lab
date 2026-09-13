@@ -4,7 +4,7 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .engine import ROOT
+from .engine import DATA_ROOT, PACKAGE_ROOT
 from .service import dispatch, info, scopes
 from .store import Store
 
@@ -42,10 +42,10 @@ def serve(db_path, host="127.0.0.1", port=8765):
                 return
             path = urlparse(self.path).path
             if path == "/":
-                return self.send(200, (ROOT / "context_lab/static/index.html").read_bytes(), "text/html")
+                return self.send(200, (PACKAGE_ROOT / "static/index.html").read_bytes(), "text/html")
             if path == "/api/scenarios":
                 # Expected IDs are deliberately omitted from the interactive task picker.
-                suite = json.loads((ROOT / "data/scenarios.json").read_text())
+                suite = json.loads((DATA_ROOT / "scenarios.json").read_text())
                 return self.send(200, {"cases": [{k: v for k, v in c.items() if k != "expected"} for c in suite["cases"]]})
             store = Store(db_path)
             try:

@@ -1,8 +1,8 @@
 # Context Lab hard gates
 
-## Automatic recall (Claude Code and Codex)
+## Opt-in automatic recall (Claude Code and Codex)
 
-With worktree scope set (`python3 -m context_lab hook set-scope --project P --ticket T`), Claude Code and Codex inject a scoped CompactView on every prompt through the shared hook contract. SessionStart injects standing rules (project baseline and `__global__`) plus this gate text. Cursor does not get prompt injection. It keeps this always-apply rule, a `beforeShellExecution` deny for `git commit`, and the real Git hook.
+Only after the user explicitly installs client hooks and sets worktree scope (`python3 -m context_lab hook set-scope --project P --ticket T`) do Claude Code and Codex inject a scoped CompactView on every prompt through the shared hook contract. SessionStart injects standing rules (project baseline and `__global__`) plus this gate text. Cursor does not get prompt injection. Its optional config supplies a `beforeShellExecution` deny for `git commit`; the Git hook is installed separately. Scope, package, or plugin setup alone never enables hooks.
 
 Call `memory_context` (or rely on ambient inject where the harness supports it) before:
 
@@ -24,16 +24,18 @@ That prints a CompactView and writes a short-lived lease bound to HEAD, the inde
 
 ## Using Context Lab from another repository
 
-Install the console script once per machine, then point hooks at it:
+Install the console script once per machine. To explicitly opt a repository into hooks, generate and install the relevant config:
 
 ```text
-pipx install -e /path/to/context-lab      # or: pip install -e /path/to/context-lab
+pipx install git+https://github.com/erreep/context-lab.git
 context-lab hook print-config claude      # writes the JSON for .claude/settings.json
 context-lab hook print-config codex       # .codex/hooks.json (needs [features] codex_hooks = true)
 context-lab hook print-config cursor      # .cursor/hooks.json
 ```
 
-Inside this repository `python3 -m context_lab` works without installing, so the committed configs use that form. The installed `pre-commit` script tries `context-lab` on PATH first, then the checkout path baked in at install time (GUI Git clients often run hooks with a stripped PATH). If neither works it blocks the commit and prints the install command; it never fails open. A human committing by hand runs `recall-for` like the agent does, or bypasses once with `git commit --no-verify`.
+Context Lab does not ship active project hook files. Generating a config and placing it at the printed path is the client-hook opt-in; `context-lab hook install-git` is a separate Git-hook opt-in.
+
+Inside this repository `python3 -m context_lab` works without installing. Portable configs use the installed `context-lab` command. The installed `pre-commit` script tries `context-lab` on PATH first, then the checkout path baked in at install time (GUI Git clients often run hooks with a stripped PATH). If neither works it blocks the commit and prints the install command; it never fails open. A human committing by hand runs `recall-for` like the agent does, or bypasses once with `git commit --no-verify`.
 
 The Git `pre-commit` hook is the enforcement point. It checks the lease. A lease proves a retrieval event under those conditions, not that the agent understood the context. Client hooks (Claude PreToolUse, Cursor beforeShellExecution) are guardrails only, not a security boundary. If a formatter rewrites the index after recall (lint-staged style), run `recall-for` again.
 

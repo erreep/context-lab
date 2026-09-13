@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from context_lab.engine import ROOT
+from context_lab.engine import DATA_ROOT, ROOT
 from context_lab.store import Store
 
 
@@ -19,7 +19,7 @@ class HTTPTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(dir=ROOT / "workspace")
         cls.db_path = str(Path(cls.temp.name) / "test.sqlite3")
         store = Store(cls.db_path)
-        store.seed(ROOT / "data/memories.json")
+        store.seed(DATA_ROOT / "memories.json")
         store.close()
         cls.process = subprocess.Popen([sys.executable, "-m", "context_lab", "--db", cls.db_path, "serve", "--port", "0"],
                                        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

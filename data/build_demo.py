@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1] / "context_lab" / "data"
 sources, memories, cases = [], [], []
 
 

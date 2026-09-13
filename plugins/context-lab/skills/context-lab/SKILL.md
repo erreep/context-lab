@@ -91,7 +91,7 @@ if reading fails. Ordinary `/initiate` never rescans.
 ## CLI fallback
 
 If the MCP server is unavailable or has not reloaded the new tool, use the bundled
-`scripts/context_lab.py` with Python 3.10+. Resolve it from this skill's location
+`scripts/context_lab.py` with Python 3.11+. Resolve it from this skill's location
 (including when installed through a symlink); it works from any working directory.
 
 ```sh

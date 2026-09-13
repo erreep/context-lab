@@ -6,7 +6,7 @@ No HTTP MCP transport, notifications, resources, or background tasks.
 import json
 import sys
 
-from . import agent_api
+from . import agent_api, usage
 from .schemas import (
     GATE_TEXT,
     KNOWLEDGE_SCHEMA,
@@ -37,6 +37,10 @@ TOOLS = [
          ["project"], False),
     tool("memory_allocate_ticket",
          "Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC) when the user wants Obsidian notes and memories but has no ticket yet.",
+         {}, []),
+    tool("memory_scope",
+         "Show the Context Lab binding for the current git branch (project, ticket, database). "
+         "Fails if the branch is unbound or HEAD is detached. Cursor has no ambient inject; call this after checkout.",
          {}, []),
     tool("memory_catalog", "List the supported task actions and information needs. Use these to describe your next decision.", {}, []),
     tool("memory_context",
@@ -86,28 +90,51 @@ TOOLS = [
 ]
 
 
+def _enforce_branch_scope(project, ticket=""):
+    """When the cwd worktree has a branch binding, reject mismatched project/ticket."""
+    import os
+    from .scope import BranchScopes, MemoryScope
+    try:
+        BranchScopes.require_request_scope(
+            os.getcwd(), MemoryScope(project=project, ticket=ticket or ""))
+    except AgentError as e:
+        if e.code == "scope_mismatch":
+            raise
+        # unbound / detached / not a worktree → explicit MCP scope only
+
+
 def call(store, name, args):
     if name == "memory_initiate":
         return agent_api.initiate(store, **args)
     if name == "memory_allocate_ticket":
         return agent_api.allocate_ticket()
+    if name == "memory_scope":
+        from .scope import BranchScopes, resolved_to_dict
+        return resolved_to_dict(BranchScopes.resolve_current())
     if name == "memory_catalog":
         return agent_api.list_catalog()
     if name == "memory_context":
-        return agent_api.context(store, args["task"], budget=args.get("budget", 1200), detail=args.get("detail", "agent"))
+        task = args["task"]
+        _enforce_branch_scope(task["project"], task.get("ticket", ""))
+        return agent_api.context(store, task, budget=args.get("budget", 1200), detail=args.get("detail", "agent"))
     if name == "memory_inspect_run":
         return agent_api.inspect_run(store, args["run_id"])
     if name == "memory_source":
+        _enforce_branch_scope(args["project"], args.get("ticket", ""))
         return agent_api.source(store, args["source_id"], args["project"], args.get("ticket", ""))
     if name == "memory_observe":
+        _enforce_branch_scope(args["project"], args.get("ticket", ""))
         return agent_api.observe(store, args)
     if name == "memory_propose":
+        for draft in args["memories"]:
+            _enforce_branch_scope(draft["project"], draft.get("ticket", ""))
         return agent_api.propose(store, args["memories"])
     if name == "memory_feedback":
         return agent_api.feedback(store, args["run_id"], args["memory_id"], args["observation"], args.get("note", ""))
     if name == "memory_promote":
         return agent_api.promote(store, args["memory_id"], title=args.get("title"), claim=args.get("claim"))
     if name == "memory_journal":
+        _enforce_branch_scope(args["project"], args["ticket"])
         return agent_api.journal(
             store, args["project"], args["ticket"], args["kind"], args["title"], args["body"])
     raise AgentError("unknown_tool", f"Unknown tool: {name}")
@@ -139,12 +166,14 @@ def serve_mcp(store, instream=None, outstream=None):
                           "serverInfo": {"name": "context-lab", "version": "0.1.0"},
                           "instructions": GATE_TEXT}
                 initialized = True
+                usage.record(store, "mcp_setup", method, response=GATE_TEXT)
             elif method == "ping":
                 result = {}
             elif not initialized:
                 raise ValueError("Initialize the server first")
             elif method == "tools/list":
                 result = {"tools": TOOLS}
+                usage.record(store, "mcp_setup", method, response=wire_dumps(TOOLS))
             elif method == "tools/call":
                 if params.get("name") not in {t["name"] for t in TOOLS}:
                     response = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Unknown tool"}}
@@ -159,6 +188,7 @@ def serve_mcp(store, instream=None, outstream=None):
                     result = {"content": [{"type": "text", "text": wire_dumps(data)}], "isError": False}
                 except (AgentError, ValueError, TypeError, KeyError, OSError) as e:
                     result = {"content": [{"type": "text", "text": wire_dumps(error_payload(e))}], "isError": True}
+                usage.record_mcp(store, params["name"], args, result)
             else:
                 response = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}
                 outstream.write(json.dumps(response) + "\n")
