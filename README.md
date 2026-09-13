@@ -382,7 +382,7 @@ python3 -m context_lab --db workspace/my-memory.sqlite3 benchmark \
   --suite my-cases.json --out results/my-results.json
 ```
 
-Each case separates `task` from `expected` labels. Metrics follow explicit conventions in the codebase so small samples are not mistaken for universal measures. Saved runs live in `results/benchmark.md` and `results/benchmark.json`.
+Each case separates `task` from `expected` labels. Metrics follow explicit conventions in the codebase so small samples are not mistaken for universal measures. Benchmark output defaults to `results/` under the current directory (gitignored). Pass `--out` to choose another path.
 
 The UI benchmark runs the bundled suite against the open store. Fictional labels are not meaningful for a store containing only your own data.
 

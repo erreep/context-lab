@@ -29,8 +29,6 @@ Rules:
 
 Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
 
-(Yes, this file also applies to agents working on the ponytail repo itself. Especially to them.)
-
 # Context Lab hard gates
 
 If the user explicitly installed client hooks and worktree scope is set, Claude Code and Codex inject a scoped CompactView on every prompt. Cursor does not. Scope alone never enables hooks. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. An explicitly installed worktree `pre-commit` hook verifies the lease (a retrieval event under bound Git state, not proof of comprehension). Client hooks are guardrails, not a security boundary.
