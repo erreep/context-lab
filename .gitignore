@@ -8,7 +8,10 @@ build/
 dist/
 results/
 
+# Local IDE / agent state (not part of the published product)
+.cursor/
+.agents/
+
 # Per-repository hooks are explicit local opt-ins.
 .claude/settings.json
 .codex/hooks.json
-.cursor/hooks.json

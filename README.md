@@ -4,7 +4,7 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 
 You get two surfaces that share one database:
 
-- **Agent integration (primary).** A stdio MCP server with eleven tools for setup, recall, evidence, journalling, promotion, and feedback.
+- **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
 - **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
 
 The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
@@ -30,12 +30,14 @@ For development from a clone:
 ```bash
 git clone https://github.com/erreep/context-lab
 cd context-lab
-python3 start.py
+python3 -m pip install -e .
+context-lab demo
+context-lab serve
 ```
 
-On Windows, use `python start.py` if that is your Python command. Open **http://127.0.0.1:8765**. Press Ctrl+C to stop. For a busy port: `python3 start.py --port 8766`.
+On Windows, use `python` if that is your Python command. Open **http://127.0.0.1:8765**. Press Ctrl+C to stop. For a busy port: `context-lab serve --port 8766`.
 
-The launcher binds localhost only. An empty database is seeded once with a fictional demo corpus. Existing records are never overwritten.
+`serve` binds localhost only. `demo` seeds an empty database once with a fictional corpus. Existing records are never overwritten.
 
 For a clean store without demo data:
 
@@ -75,7 +77,7 @@ MCP is the primary integration path. After installation, point your agent client
 }
 ```
 
-Cursor ships this config at `.cursor/mcp.json`. Enable the `context-lab` MCP server when prompted. Optional agent guidance lives in `.cursor/rules/context-lab-memory.mdc` and `.cursor/skills/context-lab-memory`. For a generic template, see `examples/mcp-config.json`.
+Copy `examples/mcp-config.json` into your client config (or paste the JSON above). Enable the `context-lab` MCP server when prompted. Workflow guidance for agents lives in `plugins/context-lab/skills/context-lab/`.
 
 ### Codex plugin
 
@@ -353,7 +355,7 @@ export CONTEXT_LAB_MODEL=your-chat-model
 export CONTEXT_LAB_EMBEDDING_MODEL=your-embedding-model
 # If the endpoint requires authentication:
 export CONTEXT_LAB_API_KEY=your-key
-python3 start.py
+context-lab serve
 ```
 
 Set variables in your own terminal. Do not put credentials in source files or the browser UI. Model controls appear in the UI when configured. The adapter expects `choices[0].message.content` JSON and ordered `data[].embedding` vectors.
@@ -412,17 +414,20 @@ Restart/reconnect existing MCP processes after updating. Hook injections also re
 
 | Command | Purpose |
 |---|---|
-| `python3 start.py [--port]` | Launch workbench and server (seeds empty DB once) |
-| `python3 -m context_lab serve [--db]` | Serve UI on an existing database |
-| `python3 -m context_lab initiate …` | Ticket knowledge-base setup (`--vault` / `--no-vault`, `--path`, `--empty`, `--refresh`) |
-| `python3 -m context_lab allocate-ticket` | Mint a generated ticket id |
-| `python3 -m context_lab context --task …` | Build a context packet |
-| `python3 -m context_lab import …` / `export …` | JSON batch IO |
-| `python3 -m context_lab draft --source …` | Model-assisted candidate draft |
-| `python3 -m context_lab benchmark …` | Run the comparison suite |
-| `python3 -m context_lab mcp` | Start the stdio MCP server |
-| `python3 -m context_lab usage [--project …] [--ticket …] [--json]` | Report locally estimated MCP and hook token traffic |
-| `python3 -m context_lab demo` | Seed the synthetic demo corpus without replacing existing memories |
+| `context-lab demo` | Seed the synthetic demo corpus without replacing existing memories |
+| `context-lab serve [--port] [--db]` | Serve the workbench UI |
+| `context-lab mcp` | Start the stdio MCP server |
+| `context-lab initiate …` | Ticket knowledge-base setup (`--vault` / `--no-vault`, `--path`, `--empty`, `--refresh`) |
+| `context-lab allocate-ticket` | Mint a generated ticket id |
+| `context-lab context --task …` | Build a context packet |
+| `context-lab import …` / `export …` | JSON batch IO |
+| `context-lab draft --source …` | Model-assisted candidate draft |
+| `context-lab benchmark …` | Run the comparison suite |
+| `context-lab usage [--project …] [--ticket …] [--json]` | Report locally estimated MCP and hook token traffic |
+| `context-lab scope bind\|unbind\|show\|list` | Bind the current git branch to a project/ticket |
+| `context-lab hook …` | Opt-in harness hooks (set-scope, recall-for, git gate) |
+
+`python3 -m context_lab …` is equivalent after `pip install -e .` or a package install.
 
 ## Persistence and backup
 

@@ -39,7 +39,7 @@ Inside this repository `python3 -m context_lab` works without installing. Portab
 
 The Git `pre-commit` hook is the enforcement point. It checks the lease. A lease proves a retrieval event under those conditions, not that the agent understood the context. Client hooks (Claude PreToolUse, Cursor beforeShellExecution) are guardrails only, not a security boundary. If a formatter rewrites the index after recall (lint-staged style), run `recall-for` again.
 
-Candidates never affect retrieval until confirmed in the local UI (`python3 start.py`).
+Candidates never affect retrieval until confirmed in the local UI (`context-lab serve`).
 Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`; keep them sparse.
 
 Durable ticket evidence goes through `memory_journal` into the bound ticket folder. `Cl/` stays ephemeral and is skipped by the importer.
