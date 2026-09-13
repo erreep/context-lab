@@ -541,6 +541,114 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
 
 
 
+
+GLOBAL_CURSOR_RULES = """---
+description: Context Lab memory soft contract (user-global MCP; no ambient CompactView)
+alwaysApply: true
+---
+
+# Context Lab memory (Cursor, user-global)
+
+Cursor does **not** inject CompactView on SessionStart or prompts.
+This `--global` install only made MCP tools available on this machine (plus this soft contract).
+Ambient inject and the git commit lease stay **per-repo**:
+
+`context-lab install --client cursor --project P --ticket T`
+
+## Mandatory recall
+
+Call `memory_context` before:
+
+1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
+2. Before every `git commit` or `git push`.
+3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
+
+Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
+"""
+
+
+def _home():
+    return Path.home()
+
+
+def _claude_json_path():
+    # Claude Code user-scope MCP lives in ~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json).
+    base = Path(os.environ["CLAUDE_CONFIG_DIR"]) if os.environ.get("CLAUDE_CONFIG_DIR") else _home()
+    return base / ".claude.json"
+
+
+def global_mcp_path(client):
+    if client == "claude":
+        return _claude_json_path()
+    if client == "codex":
+        return _home() / ".codex" / "config.toml"
+    if client == "cursor":
+        return _home() / ".cursor" / "mcp.json"
+    raise AgentError("validation", f"unknown client {client!r}", field="client")
+
+
+def _merge_mcp_servers(path: Path, force: bool):
+    """Merge mcpServers.context-lab into an existing JSON MCP config; preserve other keys."""
+    server = MCP_JSON["mcpServers"]["context-lab"]
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(MCP_JSON, indent=2) + "\n", encoding="utf-8")
+        return path
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise AgentError("invalid_config", f"{path} is not valid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise AgentError("invalid_config", f"{path} must contain a JSON object")
+    servers = data.get("mcpServers")
+    if servers is None:
+        servers = {}
+        data["mcpServers"] = servers
+    if not isinstance(servers, dict):
+        raise AgentError("invalid_config", f"{path} mcpServers must be an object")
+    if "context-lab" in servers and not force:
+        raise AgentError(
+            "already_exists",
+            f"{path} already has mcpServers.context-lab; pass --force to replace",
+        )
+    servers["context-lab"] = server
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def install_global(client, force=False):
+    """User-global MCP availability (+ Cursor soft contract). No ambient hooks, no git lease."""
+    if client not in HARNESS_CONFIGS:
+        raise AgentError("validation", f"unknown client {client!r}", field="client")
+
+    written = []
+    mcp_path = global_mcp_path(client)
+    if client == "codex":
+        written.append(str(_write_codex_mcp(mcp_path, force)))
+    elif client == "claude":
+        written.append(str(_merge_mcp_servers(mcp_path, force)))
+    else:
+        written.append(str(_merge_mcp_servers(mcp_path, force)))
+
+    if client == "cursor":
+        rules_path = _home() / ".cursor" / "rules" / "context-lab-memory.mdc"
+        written.append(str(_write_file(rules_path, GLOBAL_CURSOR_RULES, force)))
+
+    print(f"Context Lab install --global ({client})")
+    print(f"  wrote: {', '.join(written)}")
+    print("  ambient inject: still off (needs per-repo install --client)")
+    print("  hard gate: git commit lease still per-repo")
+    if client == "cursor":
+        print(f"  soft contract: {written[-1]} (call memory_context; no ambient CompactView)")
+    elif client == "codex":
+        print("  note: Codex may still need [features] codex_hooks = true for per-repo ambient hooks.")
+    print("  Scope alone never enables hooks. --global only wires MCP tools.")
+    print("  Ambient CompactView + git lease: context-lab install --client", client, "--project P --ticket T")
+    print("  Next: restart / reconnect the client so it reloads MCP.")
+    return 0
+
+
+
 def build_parser(sub):
     hook = sub.add_parser("hook", help="Harness hooks: scope, inject, lease, git gate")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
@@ -566,6 +674,7 @@ def build_parser(sub):
     inst.add_argument("--db", default=None)
     inst.add_argument("--no-git", action="store_true", help="Skip pre-commit lease install")
     inst.add_argument("--force", action="store_true", help="Overwrite existing client files")
+    inst.add_argument("--global", action="store_true", dest="global_install", help="User-global MCP only (no ambient hooks, no git lease)")
     return hook
 
 
@@ -590,6 +699,18 @@ def dispatch(args):
     if args.hook_command == "print-config":
         return print_config(args.harness)
     if args.hook_command == "install":
+        if getattr(args, "global_install", False):
+            if args.project is not None or args.ticket is not None or args.db is not None:
+                raise AgentError(
+                    "validation",
+                    "--global cannot be combined with --project/--ticket/--db",
+                )
+            if args.no_git:
+                raise AgentError(
+                    "validation",
+                    "--global never installs a git lease; omit --no-git",
+                )
+            return install_global(args.client, force=args.force)
         return install(
             args.client,
             project=args.project,

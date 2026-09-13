@@ -31,7 +31,7 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 # Context Lab hard gates
 
-Opt a worktree in with `context-lab install --client {claude|codex|cursor} --project P --ticket T` (local only: MCP + hooks + git lease; Cursor also gets a soft-contract rules file and has **no** ambient CompactView inject). Scope alone never enables hooks. After opt-in, Claude Code and Codex inject a scoped CompactView on every prompt; Cursor does not. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. An explicitly installed worktree `pre-commit` hook verifies the lease (a retrieval event under bound Git state, not proof of comprehension). Client hooks are guardrails, not a security boundary.
+Opt a worktree in with `context-lab install --client {claude|codex|cursor} --project P --ticket T` (local only: MCP + hooks + git lease; Cursor also gets a soft-contract rules file and has **no** ambient CompactView inject). Machine-wide MCP only: `context-lab install --global --client {claude|codex|cursor}` (no ambient inject, no git lease). Scope alone never enables hooks. After opt-in, Claude Code and Codex inject a scoped CompactView on every prompt; Cursor does not. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. An explicitly installed worktree `pre-commit` hook verifies the lease (a retrieval event under bound Git state, not proof of comprehension). Client hooks are guardrails, not a security boundary.
 
 Call `memory_context` (or rely on ambient inject where available) before:
 

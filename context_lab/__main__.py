@@ -67,6 +67,7 @@ def main():
     inst.add_argument("--db", default=None)
     inst.add_argument("--no-git", action="store_true", help="Skip pre-commit lease install")
     inst.add_argument("--force", action="store_true", help="Overwrite existing client files")
+    inst.add_argument("--global", action="store_true", dest="global_install", help="User-global MCP only (no ambient hooks, no git lease)")
     args = parser.parse_args()
     if args.command == "scope":
         try:
@@ -85,9 +86,21 @@ def main():
             return 1
     if args.command == "install":
         # Lore-style top-level alias for hook install.
-        from .hooks import install as install_client
+        from .hooks import install as install_client, install_global
         from .schemas import AgentError
         try:
+            if args.global_install:
+                if args.project is not None or args.ticket is not None or args.db is not None:
+                    raise AgentError(
+                        "validation",
+                        "--global cannot be combined with --project/--ticket/--db",
+                    )
+                if args.no_git:
+                    raise AgentError(
+                        "validation",
+                        "--global never installs a git lease; omit --no-git",
+                    )
+                return install_global(args.client, force=args.force)
             return install_client(
                 args.client,
                 project=args.project,

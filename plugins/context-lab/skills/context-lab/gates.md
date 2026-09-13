@@ -34,7 +34,15 @@ context-lab install --client claude --project P --ticket T
 
 Use `--client codex` or `--client cursor` as needed. Codex still needs `[features] codex_hooks = true`. Cursor gets MCP + a git-commit shell gate + `.cursor/rules/context-lab-memory.mdc` (soft recall contract) — **no** ambient CompactView inject.
 
-`install` binds scope, writes MCP, writes client hooks, and installs the git lease. Scope alone never enables hooks. Lower-level tools remain: `hook print-config`, `hook install-git`, `hook set-scope`.
+`install` binds scope, writes MCP, writes client hooks, and installs the git lease. Scope alone never enables hooks.
+
+Machine-wide MCP only (tools everywhere; **no** ambient inject; **no** git lease):
+
+```text
+context-lab install --global --client {claude|codex|cursor}
+```
+
+Ambient CompactView and the commit lease still need per-repo `install --client … --project … --ticket …`. Lower-level tools remain: `hook print-config`, `hook install-git`, `hook set-scope`.
 
 Context Lab does not ship active project hook files.
 

@@ -108,6 +108,17 @@ That binds scope, writes MCP config, writes client hooks, and installs the git c
 
 Scope alone never enables hooks. `install` is what enables them. Advanced/manual path: `hook set-scope`, `hook install-git`, and `hook print-config` still work. This repository does not ship active client hook files.
 
+Machine-wide MCP (tools available in every project, **no** ambient inject, **no** git lease):
+
+```bash
+context-lab install --global --client claude   # ~/.claude.json mcpServers
+context-lab install --global --client codex    # ~/.codex/config.toml
+context-lab install --global --client cursor   # ~/.cursor/mcp.json (+ soft-contract rules)
+```
+
+`--global` only wires MCP (and Cursor’s soft-contract rules). Ambient CompactView and the commit lease still require a per-repo `install --client … --project … --ticket …`.
+
+
 ### Hard gates
 
 Call `memory_context` before:

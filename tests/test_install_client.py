@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from context_lab.hooks import CONFIG_PATHS, HARNESS_CONFIGS, install
+from context_lab.hooks import CONFIG_PATHS, HARNESS_CONFIGS, global_mcp_path, install, install_global
 from context_lab.schemas import AgentError
 
 
@@ -118,6 +119,74 @@ class InstallClientTests(unittest.TestCase):
         pre = self.repo / ".git" / "hooks" / "pre-commit"
         self.assertTrue(pre.is_file())
         self.assertIn("lease", stdout.lower())
+
+
+class InstallGlobalTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.home = Path(self.temp.name)
+        self._old_home = os.environ.get("HOME")
+        self._old_claude = os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        os.environ["HOME"] = str(self.home)
+
+    def tearDown(self):
+        if self._old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._old_home
+        if self._old_claude is not None:
+            os.environ["CLAUDE_CONFIG_DIR"] = self._old_claude
+        self.temp.cleanup()
+
+    def _run(self, client, **kwargs):
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = install_global(client, **kwargs)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_claude_merges_user_mcp_without_hooks(self):
+        seed = self.home / ".claude.json"
+        seed.write_text(
+            json.dumps({"theme": "dark", "mcpServers": {"other": {"command": "x"}}}) + "\n",
+            encoding="utf-8",
+        )
+        code, stdout, _ = self._run("claude")
+        self.assertEqual(code, 0)
+        data = json.loads(seed.read_text(encoding="utf-8"))
+        self.assertEqual(data["theme"], "dark")
+        self.assertIn("other", data["mcpServers"])
+        self.assertEqual(data["mcpServers"]["context-lab"]["args"], ["mcp"])
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+        self.assertIn("still off", stdout.lower())
+        self.assertIn("per-repo", stdout.lower())
+
+    def test_codex_and_cursor_global_mcp_no_ambient_hooks(self):
+        code, stdout, _ = self._run("codex")
+        self.assertEqual(code, 0)
+        toml = (self.home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        self.assertIn("[mcp_servers.context-lab]", toml)
+        self.assertFalse((self.home / ".codex" / "hooks.json").exists())
+
+        code, stdout, _ = self._run("cursor")
+        self.assertEqual(code, 0)
+        mcp = json.loads((self.home / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+        self.assertEqual(mcp["mcpServers"]["context-lab"]["args"], ["mcp"])
+        rules = (self.home / ".cursor" / "rules" / "context-lab-memory.mdc").read_text(encoding="utf-8")
+        self.assertIn("memory_context", rules)
+        self.assertIn("per-repo", rules.lower() + stdout.lower())
+        self.assertFalse((self.home / ".cursor" / "hooks.json").exists())
+        self.assertFalse((self.home / ".git").exists())
+
+    def test_global_refuses_without_force(self):
+        self.assertEqual(self._run("claude")[0], 0)
+        with self.assertRaises(AgentError) as ctx:
+            install_global("claude")
+        self.assertIn(ctx.exception.code, {"already_exists", "already_exists"})
+
+    def test_global_path_helpers(self):
+        self.assertEqual(global_mcp_path("claude"), self.home / ".claude.json")
+        self.assertEqual(global_mcp_path("codex"), self.home / ".codex" / "config.toml")
+        self.assertEqual(global_mcp_path("cursor"), self.home / ".cursor" / "mcp.json")
 
 
 if __name__ == "__main__":
