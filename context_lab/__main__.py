@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from .engine import ROOT, STRATEGIES, compile_context
+from .engine import ROOT, STRATEGIES
 from .evaluate import evaluate, markdown_report
 from .provider import ModelEndpoint
 from .store import Store
@@ -45,7 +45,21 @@ def main():
     draft.add_argument("--source", required=True)
     sub.add_parser("mcp", help="Start the stdio MCP server")
     sub.add_parser("allocate-ticket", help="Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC)")
+    journal_p = sub.add_parser("journal", help="Write durable ticket journal evidence and index it")
+    journal_p.add_argument("--project", required=True)
+    journal_p.add_argument("--ticket", required=True)
+    journal_p.add_argument("--kind", required=True, choices=["plan", "decision", "progress", "handoff"])
+    journal_p.add_argument("--title", required=True)
+    journal_p.add_argument("--body", required=True)
+    from .hooks import build_parser as build_hook_parser, dispatch as dispatch_hook
+    build_hook_parser(sub)
     args = parser.parse_args()
+    if args.command == "hook":
+        try:
+            return dispatch_hook(args)
+        except (ValueError, KeyError, OSError) as e:
+            print("Error: " + str(e), file=sys.stderr)
+            return 1
     store = Store(args.db)
     try:
         if args.command == "demo":
@@ -79,6 +93,9 @@ def main():
         elif args.command == "allocate-ticket":
             from .knowledge import allocate_ticket
             print(json.dumps({"ticket": allocate_ticket()}, indent=2))
+        elif args.command == "journal":
+            from .agent_api import journal
+            print(json.dumps(journal(store, args.project, args.ticket, args.kind, args.title, args.body), indent=2))
         elif args.command == "import":
             data = json.loads(Path(args.file).read_text())
             if data.get("knowledge_bases"):
@@ -95,14 +112,15 @@ def main():
             if not source:
                 raise ValueError("Unknown source_id")
             print(json.dumps(ModelEndpoint(store).draft(source), indent=2))
+        elif args.command == "context":
+            from .agent_api import context as build_context
+            task = json.loads(Path(args.task).read_text())
+            view = build_context(store, task, budget=args.budget)
+            print(view["context"] if args.text else json.dumps(view, indent=2))
         else:
             adapter = ModelEndpoint(store) if args.embeddings or args.model_planner else None
             options = {"embeddings": adapter if args.embeddings else None, "planner": adapter if args.model_planner else None}
-            if args.command == "context":
-                task = json.loads(Path(args.task).read_text())
-                packet = compile_context(store, task, args.strategy, args.budget, **options)
-                print(packet["context"] if args.text else json.dumps(packet, indent=2))
-            elif args.command == "benchmark":
+            if args.command == "benchmark":
                 report = evaluate(store, args.suite, args.budget, **options)
                 out = Path(args.out)
                 out.parent.mkdir(parents=True, exist_ok=True)

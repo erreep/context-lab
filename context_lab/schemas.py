@@ -6,6 +6,8 @@ import math
 
 GATE_TEXT = """# Context Lab hard gates
 
+With worktree scope set, Claude Code and Codex inject a scoped CompactView on every prompt. Cursor does not. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. The Git hook verifies the lease (retrieval under bound conditions, not comprehension). Client hooks are guardrails, not a security boundary.
+
 Call `memory_context` before:
 1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
 2. Before every `git commit` or `git push`.
