@@ -5,11 +5,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from context_lab.agent_api import initiate
-from context_lab.hooks import set_scope
+from context_lab.hooks import print_config, set_scope
 from context_lab.store import Store
 
 
@@ -136,6 +138,21 @@ class HookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
         self.assertIn("set-scope", result.stderr)
+
+
+class HookOptInTests(unittest.TestCase):
+    def test_repository_ships_no_active_hooks_but_keeps_opt_in_generator(self):
+        root = Path(__file__).resolve().parents[1]
+        paths = (".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json")
+        ignored = (root / ".gitignore").read_text().splitlines()
+        for relative in paths:
+            self.assertFalse((root / relative).exists(), relative)
+            self.assertIn(relative, ignored)
+        stdout, stderr = StringIO(), StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.assertEqual(print_config("codex"), 0)
+        self.assertIn("UserPromptSubmit", json.loads(stdout.getvalue())["hooks"])
+        self.assertIn(".codex/hooks.json", stderr.getvalue())
 
 
 if __name__ == "__main__":

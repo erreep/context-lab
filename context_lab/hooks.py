@@ -388,7 +388,7 @@ def build_parser(sub):
     gate.add_argument("purpose", choices=["commit"])
     gate.add_argument("--adapter", choices=["git", "claude", "cursor"], default="git")
     hook_sub.add_parser("install-git", help="Install worktree pre-commit lease gate")
-    cfg = hook_sub.add_parser("print-config", help="Print hook config JSON for another repository")
+    cfg = hook_sub.add_parser("print-config", help="Print an opt-in hook config for another repository")
     cfg.add_argument("harness", choices=sorted(HARNESS_CONFIGS))
     return hook
 

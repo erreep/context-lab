@@ -7,9 +7,9 @@ alwaysApply: true
 
 This repo is a memory lab. Prefer its MCP tools for recall and evidence, not inventing project history.
 
-## Automatic recall and commit lease
+## Opt-in automatic recall and commit lease
 
-Claude Code and Codex inject a scoped CompactView on every prompt once worktree scope is set (`python3 -m context_lab hook set-scope`). Cursor does not get prompt injection. Before every `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. The Git `pre-commit` hook verifies the lease. A lease proves a retrieval event under specific Git and scope conditions, not comprehension. Client hooks are guardrails, not a security boundary.
+Claude Code and Codex inject a scoped CompactView only when the user has explicitly installed client hooks and set worktree scope (`python3 -m context_lab hook set-scope`). Scope alone does not enable hooks. Cursor does not get prompt injection. Before every `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. An explicitly installed Git `pre-commit` hook verifies the lease. A lease proves a retrieval event under specific Git and scope conditions, not comprehension. Client hooks are guardrails, not a security boundary.
 
 ## Hard gates — call `memory_context` before
 

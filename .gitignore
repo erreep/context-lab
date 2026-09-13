@@ -4,3 +4,8 @@ workspace/
 .env
 .venv/
 *.egg-info/
+
+# Per-repository hooks are explicit local opt-ins.
+.claude/settings.json
+.codex/hooks.json
+.cursor/hooks.json
