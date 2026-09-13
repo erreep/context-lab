@@ -91,18 +91,22 @@ codex plugin add context-lab@context-lab
 
 The plugin intentionally calls `context-lab mcp`; it does not hide or duplicate the local Python prerequisite. Installing the package or plugin does **not** enable hooks.
 
-Hooks are opt-in per repository. Run these commands only when you want that repository to receive ambient recall and the commit gate:
+Hooks are opt-in per repository. Prefer the one-shot local installer:
 
 ```bash
 cd /path/to/project
-context-lab hook set-scope --project my-project --ticket PROJ-123
-context-lab hook install-git
-mkdir -p .codex
-context-lab hook print-config codex > .codex/hooks.json
+context-lab install --client codex --project my-project --ticket PROJ-123
 ```
 
-Use `claude` or `cursor` instead of `codex` for those clients. Codex hooks require `[features] codex_hooks = true`.
-Setting a Context Lab scope alone never installs or enables hooks. This repository does not ship active client hook files; `hook print-config` is the explicit opt-in step.
+That binds scope, writes MCP config, writes client hooks, and installs the git commit lease. Use `--client claude` or `--client cursor` for those hosts.
+
+| Client | Ambient CompactView inject | What install writes |
+|---|---|---|
+| `claude` | Yes (`SessionStart` + `UserPromptSubmit`) | `.mcp.json`, `.claude/settings.json`, git lease |
+| `codex` | Yes (needs `[features] codex_hooks = true`) | `.codex/config.toml`, `.codex/hooks.json`, git lease |
+| `cursor` | **No** — Cursor has no prompt injection | `.cursor/mcp.json`, `.cursor/hooks.json` (git gate only), `.cursor/rules/context-lab-memory.mdc`, git lease |
+
+Scope alone never enables hooks. `install` is what enables them. Advanced/manual path: `hook set-scope`, `hook install-git`, and `hook print-config` still work. This repository does not ship active client hook files.
 
 ### Hard gates
 

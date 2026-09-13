@@ -384,6 +384,163 @@ def print_config(harness):
     return 0
 
 
+MCP_JSON = {
+    "mcpServers": {
+        "context-lab": {
+            "command": "context-lab",
+            "args": ["mcp"],
+        }
+    }
+}
+
+MCP_PATHS = {
+    "claude": ".mcp.json",
+    "codex": ".codex/config.toml",
+    "cursor": ".cursor/mcp.json",
+}
+
+CURSOR_RULES_PATH = ".cursor/rules/context-lab-memory.mdc"
+
+CURSOR_RULES = """---
+description: Context Lab memory soft contract (Cursor has no ambient CompactView inject)
+alwaysApply: true
+---
+
+# Context Lab memory (Cursor)
+
+Cursor does **not** inject CompactView on SessionStart or prompts. Scope alone never enables hooks.
+This install wrote MCP tools plus a git-commit shell gate; you must call recall yourself.
+
+## Mandatory recall
+
+Call `memory_context` before:
+
+1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
+2. Before every `git commit` or `git push`.
+3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
+
+Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
+Before `git commit`, run `context-lab hook recall-for --purpose commit` so the lease gate can pass.
+"""
+
+CODEX_MCP_BLOCK = """# BEGIN context-lab
+[mcp_servers.context-lab]
+command = "context-lab"
+args = ["mcp"]
+# END context-lab
+"""
+
+AMBIENT = {
+    "claude": "SessionStart + UserPromptSubmit (CompactView inject) + PreToolUse git gate",
+    "codex": "SessionStart + UserPromptSubmit (CompactView inject); enable [features] codex_hooks = true",
+    "cursor": "none — no CompactView / prompt injection on Cursor",
+}
+
+
+def _mcp_payload(client):
+    if client in ("claude", "cursor"):
+        return json.dumps(MCP_JSON, indent=2) + "\n"
+    return CODEX_MCP_BLOCK if not CODEX_MCP_BLOCK.endswith("\n") else CODEX_MCP_BLOCK
+
+
+def _write_file(path: Path, content: str, force: bool):
+    if path.exists() and not force:
+        raise AgentError(
+            "already_exists",
+            f"{path} already exists; pass --force to overwrite",
+            hint=f"Remove it or re-run with --force",
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _write_codex_mcp(path: Path, force: bool):
+    """Write or replace a marked context-lab MCP section in Codex config.toml."""
+    begin, end = "# BEGIN context-lab", "# END context-lab"
+    block = CODEX_MCP_BLOCK if CODEX_MCP_BLOCK.endswith("\n") else CODEX_MCP_BLOCK + "\n"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(block, encoding="utf-8")
+        return path
+    text = path.read_text(encoding="utf-8")
+    if begin in text and end in text:
+        if not force:
+            raise AgentError(
+                "already_exists",
+                f"{path} already has a context-lab MCP section; pass --force to replace",
+            )
+        pre = text.split(begin, 1)[0].rstrip()
+        post = text.split(end, 1)[1].lstrip("\n")
+        path.write_text((pre + "\n\n" if pre else "") + block + (post if not post or post.startswith("\n") else "\n" + post), encoding="utf-8")
+        return path
+    if text.strip() and not force:
+        raise AgentError(
+            "already_exists",
+            f"{path} already exists; pass --force to append a context-lab MCP section",
+        )
+    sep = "" if not text or text.endswith("\n") else "\n"
+    path.write_text(text + sep + ("\n" if text.strip() else "") + block, encoding="utf-8")
+    return path
+
+
+def install(client, project=None, ticket=None, db=None, git=True, force=False, cwd=None):
+    """One-shot local opt-in: scope, MCP, client hooks, git lease; Cursor soft-contract rules."""
+    if client not in HARNESS_CONFIGS:
+        raise AgentError("validation", f"unknown client {client!r}", field="client")
+    if (project is None) ^ (ticket is None):
+        raise AgentError(
+            "validation",
+            "pass both --project and --ticket, or neither (reuse bound scope)",
+            field="project",
+        )
+    cwd = require_worktree(cwd)
+    root = Path(cwd)
+
+    # Fail before writes when scope is missing.
+    if project is not None:
+        scope = set_scope(project, ticket, db=db, cwd=cwd)
+    else:
+        scope = load_scope(cwd=cwd)
+
+    written = []
+    mcp_rel = MCP_PATHS[client]
+    mcp_path = root / mcp_rel
+    if client == "codex":
+        written.append(str(_write_codex_mcp(mcp_path, force).relative_to(root)))
+    else:
+        written.append(str(_write_file(mcp_path, _mcp_payload(client), force).relative_to(root)))
+
+    hooks_rel = CONFIG_PATHS[client]
+    hooks_path = root / hooks_rel
+    hooks_body = json.dumps(HARNESS_CONFIGS[client], indent=2) + "\n"
+    written.append(str(_write_file(hooks_path, hooks_body, force).relative_to(root)))
+
+    if client == "cursor":
+        rules_path = root / CURSOR_RULES_PATH
+        written.append(str(_write_file(rules_path, CURSOR_RULES, force).relative_to(root)))
+
+    git_status = "skipped (--no-git)"
+    if git:
+        code = install_git(cwd=cwd)
+        git_status = "installed pre-commit lease gate" if code == 0 else "not installed (existing hook or core.hooksPath; see stderr)"
+
+    print(f"Context Lab install ({client})")
+    print(f"  scope: project={scope['project']!r} ticket={scope['ticket']!r} branch={scope.get('branch')!r}")
+    print(f"  wrote: {', '.join(written)}")
+    print(f"  ambient inject: {AMBIENT[client]}")
+    print(f"  hard gate: git commit lease ({git_status})")
+    if client == "cursor":
+        print(f"  soft contract: {CURSOR_RULES_PATH} (call memory_context; no ambient CompactView)")
+        print("  note: Cursor has no CompactView prompt injection. MCP + rules + git lease only.")
+    elif client == "codex":
+        print("  note: Codex needs [features] codex_hooks = true and may require trusting project hooks.")
+    print("  Scope alone never enables hooks. This command did.")
+    print("  Next: restart / reconnect the client so it reloads MCP and hooks.")
+    return 0
+
+
+
 def build_parser(sub):
     hook = sub.add_parser("hook", help="Harness hooks: scope, inject, lease, git gate")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
@@ -402,6 +559,13 @@ def build_parser(sub):
     hook_sub.add_parser("install-git", help="Install worktree pre-commit lease gate")
     cfg = hook_sub.add_parser("print-config", help="Print an opt-in hook config for another repository")
     cfg.add_argument("harness", choices=sorted(HARNESS_CONFIGS))
+    inst = hook_sub.add_parser("install", help="One-shot local opt-in: MCP + hooks + git lease (+ Cursor soft contract)")
+    inst.add_argument("--client", required=True, choices=sorted(HARNESS_CONFIGS))
+    inst.add_argument("--project", default=None)
+    inst.add_argument("--ticket", default=None)
+    inst.add_argument("--db", default=None)
+    inst.add_argument("--no-git", action="store_true", help="Skip pre-commit lease install")
+    inst.add_argument("--force", action="store_true", help="Overwrite existing client files")
     return hook
 
 
@@ -425,4 +589,13 @@ def dispatch(args):
         return install_git()
     if args.hook_command == "print-config":
         return print_config(args.harness)
+    if args.hook_command == "install":
+        return install(
+            args.client,
+            project=args.project,
+            ticket=args.ticket,
+            db=args.db,
+            git=not args.no_git,
+            force=args.force,
+        )
     raise SystemExit(f"unknown hook command: {args.hook_command}")

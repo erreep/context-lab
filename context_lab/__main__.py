@@ -60,6 +60,13 @@ def main():
     from .scope import build_parser as build_scope_parser, dispatch as dispatch_scope
     build_hook_parser(sub)
     build_scope_parser(sub)
+    inst = sub.add_parser("install", help="One-shot local opt-in: MCP + client hooks + git lease (alias of hook install)")
+    inst.add_argument("--client", required=True, choices=["claude", "codex", "cursor"])
+    inst.add_argument("--project", default=None)
+    inst.add_argument("--ticket", default=None)
+    inst.add_argument("--db", default=None)
+    inst.add_argument("--no-git", action="store_true", help="Skip pre-commit lease install")
+    inst.add_argument("--force", action="store_true", help="Overwrite existing client files")
     args = parser.parse_args()
     if args.command == "scope":
         try:
@@ -70,6 +77,28 @@ def main():
     if args.command == "hook":
         try:
             return dispatch_hook(args)
+        except AgentError as e:
+            print(f"Error: {e.message}", file=sys.stderr)
+            return 1
+        except (ValueError, KeyError, OSError) as e:
+            print("Error: " + str(e), file=sys.stderr)
+            return 1
+    if args.command == "install":
+        # Lore-style top-level alias for hook install.
+        from .hooks import install as install_client
+        from .schemas import AgentError
+        try:
+            return install_client(
+                args.client,
+                project=args.project,
+                ticket=args.ticket,
+                db=args.db,
+                git=not args.no_git,
+                force=args.force,
+            )
+        except AgentError as e:
+            print(f"Error: {e.message}", file=sys.stderr)
+            return 1
         except (ValueError, KeyError, OSError) as e:
             print("Error: " + str(e), file=sys.stderr)
             return 1
