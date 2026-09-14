@@ -483,18 +483,18 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     """One-shot local opt-in: scope, MCP, client hooks, git lease; Cursor soft-contract rules."""
     if client not in HARNESS_CONFIGS:
         raise AgentError("validation", f"unknown client {client!r}", field="client")
-    if (project is None) ^ (ticket is None):
+    if project is None and ticket is not None:
         raise AgentError(
             "validation",
-            "pass both --project and --ticket, or neither (reuse bound scope)",
-            field="project",
+            "ticket requires --project; omit both to reuse bound scope",
+            field="ticket",
         )
     cwd = require_worktree(cwd)
     root = Path(cwd)
 
     # Fail before writes when scope is missing.
     if project is not None:
-        scope = set_scope(project, ticket, db=db, cwd=cwd)
+        scope = set_scope(project, ticket or "", db=db, cwd=cwd)
     else:
         scope = load_scope(cwd=cwd)
 
@@ -521,7 +521,9 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
         git_status = "installed pre-commit lease gate" if code == 0 else "not installed (existing hook or core.hooksPath; see stderr)"
 
     print(f"Context Lab install ({client})")
-    print(f"  scope: project={scope['project']!r} ticket={scope['ticket']!r} branch={scope.get('branch')!r}")
+    bound_ticket = scope["ticket"]
+    baseline_note = " (project baseline)" if bound_ticket == "" else ""
+    print(f"  scope: project={scope['project']!r} ticket={bound_ticket!r}{baseline_note} branch={scope.get('branch')!r}")
     print(f"  wrote: {', '.join(written)}")
     print(f"  ambient inject: {AMBIENT[client]}")
     print(f"  hard gate: git commit lease ({git_status})")
@@ -532,6 +534,8 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
         print("  note: Codex needs [features] codex_hooks = true and may require trusting project hooks.")
     print("  Scope alone never enables hooks. This command did.")
     print("  Next: restart / reconnect the client. Confirm waiting candidates at http://127.0.0.1:8765 (context-lab serve).")
+    if bound_ticket == "":
+        print("  Next: rebind with hook set-scope --project P --ticket T when you have a ticket.")
     return 0
 
 
@@ -639,7 +643,7 @@ def build_parser(sub):
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
     scope_p = hook_sub.add_parser("set-scope", help="Bind project/ticket/db to this worktree")
     scope_p.add_argument("--project", required=True)
-    scope_p.add_argument("--ticket", required=True)
+    scope_p.add_argument("--ticket", default="")
     scope_p.add_argument("--db", default=None)
     hook_sub.add_parser("inject", help="UserPromptSubmit ambient context injection")
     hook_sub.add_parser("session-start", help="SessionStart standing rules + gate text")

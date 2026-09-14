@@ -1,4 +1,5 @@
 """Branch binding registry: bind, resolve, conflict, detached HEAD."""
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -38,6 +39,45 @@ class BranchScopeTests(unittest.TestCase):
         self.assertEqual(str(resolved.database), str(Path(self.db).resolve()))
         shown = BranchScopes.resolve_current(str(self.repo))
         self.assertEqual(shown.scope, self.scope_a)
+
+    def test_baseline_bind_and_resolve(self):
+        baseline = MemoryScope(project="app", ticket="")
+        resolved = BranchScopes.bind_current(str(self.repo), baseline, database=self.db)
+        self.assertEqual(resolved.scope, baseline)
+        shown = BranchScopes.resolve_current(str(self.repo))
+        self.assertEqual(shown.scope, baseline)
+        self.assertEqual(shown.scope.ticket, "")
+
+    def test_baseline_bind_upgrades_legacy_nonempty_ticket_check(self):
+        common = Path(_git(self.repo, "rev-parse", "--git-common-dir").stdout.strip())
+        if not common.is_absolute():
+            common = (self.repo / common).resolve()
+        path = common / "context-lab" / "branch-bindings.sqlite3"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        conn.executescript("""
+            CREATE TABLE repository_config (
+              singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+              memory_db TEXT NOT NULL
+            );
+            CREATE TABLE branch_bindings (
+              branch_ref TEXT PRIMARY KEY,
+              project TEXT NOT NULL CHECK (trim(project) <> ''),
+              ticket TEXT NOT NULL CHECK (trim(ticket) <> ''),
+              updated_at TEXT NOT NULL
+            );
+        """)
+        conn.execute(
+            "INSERT INTO repository_config (singleton, memory_db) VALUES (1, ?)",
+            (self.db,),
+        )
+        conn.commit()
+        conn.close()
+        baseline = MemoryScope(project="app", ticket="")
+        resolved = BranchScopes.bind_current(str(self.repo), baseline, database=self.db)
+        self.assertEqual(resolved.scope, baseline)
+        shown = BranchScopes.resolve_current(str(self.repo))
+        self.assertEqual(shown.scope.ticket, "")
 
     def test_idempotent_rebind(self):
         first = BranchScopes.bind_current(str(self.repo), self.scope_a, database=self.db)

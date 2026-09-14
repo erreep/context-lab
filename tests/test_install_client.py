@@ -12,6 +12,7 @@ from pathlib import Path
 
 from context_lab.hooks import CONFIG_PATHS, HARNESS_CONFIGS, global_mcp_path, install, install_global
 from context_lab.schemas import AgentError
+from context_lab.scope import BranchScopes
 
 
 def _git(cwd, *args):
@@ -101,6 +102,29 @@ class InstallClientTests(unittest.TestCase):
                 install("claude", project="app", ticket="T-1", git=False, force=True, cwd=str(self.repo)),
                 0,
             )
+
+    def test_install_empty_ticket_binds_project_baseline(self):
+        code, stdout, _ = self._install("cursor", project="app", ticket="", git=False)
+        self.assertEqual(code, 0)
+        shown = BranchScopes.resolve_current(str(self.repo))
+        self.assertEqual(shown.scope.project, "app")
+        self.assertEqual(shown.scope.ticket, "")
+        self.assertIn("project baseline", stdout.lower())
+        self.assertIn("set-scope", stdout.lower())
+
+    def test_install_omitted_ticket_binds_project_baseline(self):
+        code, _, _ = self._install("cursor", project="app", git=False)
+        self.assertEqual(code, 0)
+        shown = BranchScopes.resolve_current(str(self.repo))
+        self.assertEqual(shown.scope.project, "app")
+        self.assertEqual(shown.scope.ticket, "")
+
+    def test_install_ticket_without_project_fails(self):
+        self.temp, self.repo = _repo()
+        with self.assertRaises(AgentError) as ctx:
+            install("cursor", ticket="T-1", git=False, cwd=str(self.repo))
+        self.assertEqual(ctx.exception.code, "validation")
+        self.assertFalse((self.repo / ".cursor" / "mcp.json").exists())
 
     def test_missing_scope_fails_before_writes(self):
         self.temp, self.repo = _repo()

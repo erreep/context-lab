@@ -118,10 +118,26 @@ class BranchBindingRegistry:
             CREATE TABLE IF NOT EXISTS branch_bindings (
               branch_ref TEXT PRIMARY KEY,
               project TEXT NOT NULL CHECK (trim(project) <> ''),
-              ticket TEXT NOT NULL CHECK (trim(ticket) <> ''),
+              ticket TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
         """)
+        sql = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='branch_bindings'",
+        ).fetchone()[0]
+        if sql and "trim(ticket)" in sql:
+            self._conn.executescript("""
+                CREATE TABLE branch_bindings_new (
+                  branch_ref TEXT PRIMARY KEY,
+                  project TEXT NOT NULL CHECK (trim(project) <> ''),
+                  ticket TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                INSERT INTO branch_bindings_new
+                  SELECT branch_ref, project, ticket, updated_at FROM branch_bindings;
+                DROP TABLE branch_bindings;
+                ALTER TABLE branch_bindings_new RENAME TO branch_bindings;
+            """)
         self._conn.commit()
 
     def database(self) -> Path:
@@ -166,8 +182,6 @@ class BranchBindingRegistry:
         ticket = ticket.strip()
         if not project:
             raise AgentError("validation", "project required", field="project")
-        if not ticket:
-            raise AgentError("validation", "ticket required (v1: no baseline binds)", field="ticket")
         scope = MemoryScope(project=project, ticket=ticket)
         existing = self.get(branch)
         if existing:
@@ -321,7 +335,7 @@ def build_parser(sub):
     scope_sub = scope.add_subparsers(dest="scope_command", required=True)
     bind_p = scope_sub.add_parser("bind", help="Bind current branch to project/ticket")
     bind_p.add_argument("--project", required=True)
-    bind_p.add_argument("--ticket", required=True)
+    bind_p.add_argument("--ticket", default="")
     bind_p.add_argument("--db", default=None, help="Memory database path for this repository")
     bind_p.add_argument("--replace", action="store_true", help="Overwrite an existing binding")
     scope_sub.add_parser("unbind", help="Remove binding for current branch")
