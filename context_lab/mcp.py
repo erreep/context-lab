@@ -8,6 +8,7 @@ import sys
 
 from . import agent_api, usage
 from .schemas import (
+    FLAT_CONTEXT_EXAMPLE,
     GATE_TEXT,
     KNOWLEDGE_SCHEMA,
     MEMORY_DRAFT_SCHEMA,
@@ -16,6 +17,20 @@ from .schemas import (
     error_payload,
     wire_dumps,
 )
+
+_TASK_FIELDS = ("project", "ticket", "actions", "needs", "state", "as_of")
+_CONTEXT_PROPERTIES = {
+    "project": {"type": "string", "minLength": 1, "description": "Project scope for retrieval."},
+    "task": {"type": "string", "minLength": 1, "description": "What you are about to do."},
+    "query": {"type": "string", "description": "Alias for task."},
+    "ticket": TASK_SCHEMA["properties"]["ticket"],
+    "actions": TASK_SCHEMA["properties"]["actions"],
+    "needs": TASK_SCHEMA["properties"]["needs"],
+    "state": TASK_SCHEMA["properties"]["state"],
+    "as_of": TASK_SCHEMA["properties"]["as_of"],
+    "budget": {"type": "integer", "minimum": 128, "maximum": 16000},
+    "detail": {"type": "string", "enum": ["agent", "prose", "inspect", "full"]},
+}
 
 
 def tool(name, description, properties, required, read_only=True):
@@ -38,15 +53,16 @@ TOOLS = [
          "Mint work-YYYYMMDD-HHMMSS when the user wants notes/memories but has no ticket yet. Does not create a notes folder.",
          {}, []),
     tool("memory_scope",
-         "Show branch binding (project, ticket, db). Fails if unbound or detached HEAD.",
+         "Show branch binding when this process is in a bound worktree. "
+         "Otherwise returns status=unavailable. Does not gate memory_context.",
          {}, []),
     tool("memory_catalog", "List supported task actions and information needs.", {}, []),
     tool("memory_context",
          "Build a task-targeted context packet (lab → project baseline → exact ticket). "
+         "Pass project and task (what you are about to do). Nested task objects still work. "
          "Default detail=agent returns the agent packet under budget. detail=inspect|full is for the workbench; prefer memory_inspect_run for a saved run.",
-         {"task": TASK_SCHEMA, "budget": {"type": "integer", "minimum": 128, "maximum": 16000},
-          "detail": {"type": "string", "enum": ["agent", "prose", "inspect", "full"]}},
-         ["task"], False),
+         _CONTEXT_PROPERTIES,
+         ["project", "task"], False),
     tool("memory_inspect_run",
          "Load inspect projection for a prior memory_context run_id.",
          {"run_id": {"type": "string"}},
@@ -85,6 +101,56 @@ TOOLS = [
 ]
 
 
+def _task_error(message, field="task"):
+    return AgentError("validation", message, field=field, hint=FLAT_CONTEXT_EXAMPLE)
+
+
+def _parse_context_args(args):
+    """Normalize flat or legacy nested memory_context arguments into an engine task dict."""
+    if not isinstance(args, dict):
+        raise _task_error("memory_context arguments must be an object")
+    task_val = args.get("task", None)
+    budget = args.get("budget", 1200)
+    detail = args.get("detail", "agent")
+    if isinstance(task_val, dict):
+        mixed = [key for key in _TASK_FIELDS + ("query",) if key in args]
+        if mixed:
+            raise _task_error(
+                "Do not mix a nested task object with top-level " + ", ".join(mixed),
+            )
+        return dict(task_val), budget, detail
+    query = None
+    if isinstance(task_val, str) and task_val.strip():
+        query = task_val.strip()
+    elif task_val is not None:
+        raise _task_error("task must be a string or a nested task object")
+    alias = args.get("query")
+    if isinstance(alias, str) and alias.strip():
+        alias = alias.strip()
+        if query is not None and alias != query:
+            raise _task_error("task and query disagree", field="query")
+        query = query or alias
+    elif alias is not None and alias != "":
+        raise _task_error("query must be a string", field="query")
+    if not query:
+        raise _task_error("Pass task (what you are about to do)")
+    task = {key: args[key] for key in _TASK_FIELDS if key in args}
+    task["query"] = query
+    return task, budget, detail
+
+
+def _context_value_error(exc):
+    message = str(exc)
+    field = "task"
+    if "requires query" in message:
+        field = "query"
+    elif "requires project" in message:
+        field = "project"
+    elif "state" in message.lower():
+        field = "state"
+    return AgentError("validation", message, field=field, hint=FLAT_CONTEXT_EXAMPLE)
+
+
 def _enforce_branch_scope(project, ticket=""):
     """When cwd has a branch binding for this project, reject a mismatched ticket."""
     import os
@@ -105,14 +171,17 @@ def call(store, name, args):
     if name == "memory_allocate_ticket":
         return agent_api.allocate_ticket()
     if name == "memory_scope":
-        from .scope import BranchScopes, resolved_to_dict
-        return resolved_to_dict(BranchScopes.resolve_current())
+        from .scope import scope_status
+        return scope_status()
     if name == "memory_catalog":
         return agent_api.list_catalog()
     if name == "memory_context":
-        task = args["task"]
-        _enforce_branch_scope(task["project"], task.get("ticket", ""))
-        return agent_api.context(store, task, budget=args.get("budget", 1200), detail=args.get("detail", "agent"))
+        task, budget, detail = _parse_context_args(args)
+        _enforce_branch_scope(task.get("project", ""), task.get("ticket", ""))
+        try:
+            return agent_api.context(store, task, budget=budget, detail=detail)
+        except ValueError as e:
+            raise _context_value_error(e) from e
     if name == "memory_inspect_run":
         return agent_api.inspect_run(store, args["run_id"])
     if name == "memory_source":

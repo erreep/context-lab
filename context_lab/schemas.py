@@ -68,6 +68,9 @@ TASK_SCHEMA = {
     "required": ["query", "project"],
 }
 
+# Advertised MCP memory_context shape. Nested {task:{project,query}} is still accepted at runtime.
+FLAT_CONTEXT_EXAMPLE = '{"project":"my-project","task":"what you are about to do"}'
+
 MEMORY_DRAFT_SCHEMA = {
     "type": "object",
     "required": ["project", "kind", "title", "claim", "source_ids"],

@@ -251,6 +251,32 @@ def resolved_to_dict(resolved: ResolvedScope) -> dict:
     }
 
 
+_UNAVAILABLE_REASONS = {
+    "not_a_worktree": "mcp_process_cwd_not_worktree",
+    "unbound_branch": "unbound_branch",
+    "detached_head": "detached_head",
+}
+
+
+def scope_status(cwd=None):
+    """MCP diagnostic. Never raises for missing git cwd or unbound branch."""
+    try:
+        resolved = BranchScopes.resolve_current(cwd)
+    except AgentError as e:
+        reason = _UNAVAILABLE_REASONS.get(e.code, e.code)
+        if e.code == "not_a_worktree":
+            message = (
+                "The MCP server was not started in a Git worktree; "
+                "pass project to memory_context."
+            )
+        else:
+            message = e.message
+        return {"status": "unavailable", "reason": reason, "message": message}
+    out = resolved_to_dict(resolved)
+    out["status"] = "available"
+    return out
+
+
 class BranchScopes:
     @staticmethod
     def _open(cwd=None):
