@@ -83,13 +83,10 @@ class InstallClientTests(unittest.TestCase):
         self.assertIn("beforeShellExecution", hooks["hooks"])
         rules = (self.repo / ".cursor/rules/context-lab-memory.mdc").read_text(encoding="utf-8")
         self.assertIn("memory_context", rules)
-        self.assertIn("no ambient", rules.lower() + " " + stdout.lower() or "")
-        self.assertTrue(
-            "no CompactView" in stdout
-            or "none" in stdout.lower()
-            or "no ambient" in stdout.lower()
-        )
-        self.assertIn("memory_context", stdout + rules)
+        combined = (rules + "\n" + stdout).lower()
+        self.assertTrue("no ambient" in combined or "none" in combined)
+        self.assertIn("recall-for", rules)
+        self.assertLessEqual(len(rules), 700)
 
     def test_refuses_existing_files_without_force(self):
         code, _, _ = self._install("claude", project="app", ticket="T-1", git=False)

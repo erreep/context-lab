@@ -119,31 +119,30 @@ context-lab install --global --client cursor   # ~/.cursor/mcp.json (+ soft-cont
 `--global` only wires MCP (and Cursor’s soft-contract rules). Ambient CompactView and the commit lease still require a per-repo `install --client … --project … --ticket …`.
 
 
-### Hard gates
+### Agent contract
 
-Call `memory_context` before:
+Runtime source: MCP `initialize.instructions` (`GATE_TEXT`).
 
-1. After `memory_initiate` or `memory_allocate_ticket` (or after you choose an existing project/ticket scope), before other work.
-2. Before every `git commit` or `git push`.
-3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
+1. Before `git commit`, run `context-lab hook recall-for --purpose commit`.
+2. Soft clients (Cursor: no ambient inject) call `memory_context` after scope bind and before history-dependent work. Ambient clients (Claude/Codex) already inject standing context.
+3. Candidates stay inert until confirmed in the workbench. Propose one sharp ticket-scoped `title`+`claim`+`source_ids` per outcome.
+4. Lab-wide writes need explicit user approval and `confirm_global=true`.
 
-Setup is not recall. Initializing a ticket does not load standing rules until you call `memory_context`.
-
-Candidates never affect retrieval until you confirm them in the workbench. A prior agent suggestion is not a confirmed project change.
+Setup is not recall.
 
 ### Suggested agent loop
 
-1. **Initiate scope** once per project/ticket (`memory_initiate`). Allocate a ticket id if the user has notes but no ticket yet (`memory_allocate_ticket`).
-2. **Discover vocabulary** when needed (`memory_catalog`).
-3. **Recall before deciding** (`memory_context` with query, project, optional ticket, actions, needs, and known state).
-4. **Read evidence** when a condition or rationale matters (`memory_source`).
-5. **Record observations** after work (`memory_observe`).
-6. **Propose generalizations** as candidates (`memory_propose`). Optional model-assisted drafts via `draft` when an endpoint is configured.
-7. **Report outcomes** using the `run_id` from context (`memory_feedback`).
+1. **Scope** once (`memory_initiate` / `memory_allocate_ticket` as needed).
+2. **Recall** — soft clients (Cursor) call `memory_context` after bind and before history-dependent work; ambient clients already get standing inject and call `memory_context` for focused queries / commit.
+3. **Read evidence** when a condition matters (`memory_source`).
+4. **Record** observations (`memory_observe`); propose one sharp ticket-scoped candidate (`memory_propose`: title+claim+source_ids).
+5. **Commit** — `context-lab hook recall-for --purpose commit` before `git commit`.
+6. **Feedback** optional via `run_id` (`memory_feedback`).
 
 Suggested instruction block for agent prompts:
 
-> Before a decision that depends on project history, call memory_context with the next action, known current state, and project. Read linked sources when a condition or rationale matters. Resolve consequential gaps. After an observed outcome, record the evidence. Propose generalizations as candidates and report missed context using the run_id. A previous agent's suggestion is not a confirmed project change.
+> Soft clients: call memory_context after scope bind and before history-dependent decisions. Ambient clients already inject standing context. Before git commit, run recall-for. After outcomes, observe evidence and propose one durable ticket-scoped candidate. Candidates stay inert until UI confirm. A prior agent suggestion is not a confirmed project change.
+
 
 ### MCP tools
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import agent_api, usage
 from .engine import DEFAULT_DB, ROOT
-from .schemas import GATE_TEXT, AgentError, wire_dumps
+from .schemas import AgentError, wire_dumps
 from .store import Store
 
 INJECT_BUDGET = 800  # header ~175 wire tokens; one journal pick ~270. 400 dropped every pick.
@@ -181,7 +181,12 @@ def session_start(payload=None):
             budget=INJECT_BUDGET,
             detail="agent",
         )
-        text = GATE_TEXT.strip() + "\n\n" + wire_dumps(view)
+        # MCP initialize already ships GATE_TEXT. SessionStart pays standing context + a one-line soft/ambient stub.
+        stub = (
+            "Context Lab: standing context below. Soft clients (no ambient inject) still call "
+            "memory_context after bind and before history-dependent work; before commit run recall-for."
+        )
+        text = stub + "\n\n" + wire_dumps(view)
         usage.record(store, "hook", "SessionStart", (scope["project"], scope["ticket"]), response=text)
     finally:
         store.close()
@@ -402,25 +407,15 @@ MCP_PATHS = {
 CURSOR_RULES_PATH = ".cursor/rules/context-lab-memory.mdc"
 
 CURSOR_RULES = """---
-description: Context Lab memory soft contract (Cursor has no ambient CompactView inject)
+description: Context Lab soft contract (Cursor has no ambient inject)
 alwaysApply: true
 ---
 
-# Context Lab memory (Cursor)
+# Context Lab (Cursor)
 
-Cursor does **not** inject CompactView on SessionStart or prompts. Scope alone never enables hooks.
-This install wrote MCP tools plus a git-commit shell gate; you must call recall yourself.
-
-## Mandatory recall
-
-Call `memory_context` before:
-
-1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
-2. Before every `git commit` or `git push`.
-3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
-
-Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
-Before `git commit`, run `context-lab hook recall-for --purpose commit` so the lease gate can pass.
+No ambient context inject here. After scope bind, call `memory_context` before history-dependent work.
+Before `git commit`, run `context-lab hook recall-for --purpose commit`.
+Candidates stay inert until confirmed in the local UI. Propose title+claim+source_ids only unless asked for more.
 """
 
 CODEX_MCP_BLOCK = """# BEGIN context-lab
@@ -431,9 +426,9 @@ args = ["mcp"]
 """
 
 AMBIENT = {
-    "claude": "SessionStart + UserPromptSubmit (CompactView inject) + PreToolUse git gate",
-    "codex": "SessionStart + UserPromptSubmit (CompactView inject); enable [features] codex_hooks = true",
-    "cursor": "none — no CompactView / prompt injection on Cursor",
+    "claude": "SessionStart + UserPromptSubmit (ambient inject) + PreToolUse git gate",
+    "codex": "SessionStart + UserPromptSubmit (ambient inject); enable [features] codex_hooks = true",
+    "cursor": "none — no ambient inject / prompt injection on Cursor",
 }
 
 
@@ -531,8 +526,8 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     print(f"  ambient inject: {AMBIENT[client]}")
     print(f"  hard gate: git commit lease ({git_status})")
     if client == "cursor":
-        print(f"  soft contract: {CURSOR_RULES_PATH} (call memory_context; no ambient CompactView)")
-        print("  note: Cursor has no CompactView prompt injection. MCP + rules + git lease only.")
+        print(f"  soft contract: {CURSOR_RULES_PATH} (call memory_context; no ambient inject)")
+        print("  note: Cursor has no ambient context inject. MCP + rules + git lease only.")
     elif client == "codex":
         print("  note: Codex needs [features] codex_hooks = true and may require trusting project hooks.")
     print("  Scope alone never enables hooks. This command did.")
@@ -543,27 +538,17 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
 
 
 GLOBAL_CURSOR_RULES = """---
-description: Context Lab memory soft contract (user-global MCP; no ambient CompactView)
+description: Context Lab soft contract (user-global MCP; no ambient inject)
 alwaysApply: true
 ---
 
-# Context Lab memory (Cursor, user-global)
+# Context Lab (Cursor, user-global)
 
-Cursor does **not** inject CompactView on SessionStart or prompts.
-This `--global` install only made MCP tools available on this machine (plus this soft contract).
-Ambient inject and the git commit lease stay **per-repo**:
-
+Global install wires MCP only. Per-repo ambient/lease still need:
 `context-lab install --client cursor --project P --ticket T`
 
-## Mandatory recall
-
-Call `memory_context` before:
-
-1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
-2. Before every `git commit` or `git push`.
-3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
-
-Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
+No ambient inject. Call `memory_context` after scope bind and before history-dependent work.
+Before commit: `context-lab hook recall-for --purpose commit`. Candidates stay inert until UI confirm.
 """
 
 
@@ -639,11 +624,11 @@ def install_global(client, force=False):
     print("  ambient inject: still off (needs per-repo install --client)")
     print("  hard gate: git commit lease still per-repo")
     if client == "cursor":
-        print(f"  soft contract: {written[-1]} (call memory_context; no ambient CompactView)")
+        print(f"  soft contract: {written[-1]} (call memory_context; no ambient inject)")
     elif client == "codex":
         print("  note: Codex may still need [features] codex_hooks = true for per-repo ambient hooks.")
     print("  Scope alone never enables hooks. --global only wires MCP tools.")
-    print("  Ambient CompactView + git lease: context-lab install --client", client, "--project P --ticket T")
+    print("  Ambient inject + git lease: context-lab install --client", client, "--project P --ticket T")
     print("  Next: restart / reconnect the client so it reloads MCP.")
     return 0
 
@@ -656,7 +641,7 @@ def build_parser(sub):
     scope_p.add_argument("--project", required=True)
     scope_p.add_argument("--ticket", required=True)
     scope_p.add_argument("--db", default=None)
-    hook_sub.add_parser("inject", help="UserPromptSubmit ambient CompactView injection")
+    hook_sub.add_parser("inject", help="UserPromptSubmit ambient context injection")
     hook_sub.add_parser("session-start", help="SessionStart standing rules + gate text")
     recall = hook_sub.add_parser("recall-for", help="Recall and issue a commit lease")
     recall.add_argument("--purpose", required=True, choices=["commit"])

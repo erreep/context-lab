@@ -99,13 +99,15 @@ class HookTests(unittest.TestCase):
         self.assertIn("Alpha", blob1)
         self.assertIn("Beta", blob2)
 
-    def test_session_start_injects_gate_text_and_view(self):
+    def test_session_start_injects_standing_context_stub(self):
         result = _run_hook(self.repo, "session-start", {"session_id": "s1", "cwd": str(self.repo)})
         self.assertEqual(result.returncode, 0, result.stderr)
         out = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(out["hookEventName"], "SessionStart")
-        self.assertIn("Context Lab hard gates", out["additionalContext"])
+        self.assertIn("standing context", out["additionalContext"])
         self.assertIn("run_id", out["additionalContext"])
+        self.assertNotIn("Context Lab hard gates", out["additionalContext"])
+        self.assertNotIn("Context Lab contract", out["additionalContext"].split("\n\n", 1)[0])
 
     def test_gate_adapter_reads_command_and_cwd_from_payload(self):
         # Run from a directory that is not a repo: only the payload can supply cwd and command.
