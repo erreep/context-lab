@@ -28,3 +28,4 @@ python3 -m context_lab hook recall-for --purpose commit
 ## Candidates
 
 Never affect retrieval until confirmed in the local UI (`context-lab serve`). Must-tier (lab-wide, baseline, constraints, standing rules) is one-at-a-time; ticket batch-tier may multi-confirm. Propose durable title+claim linked to real `source_ids`.
+Human surface is the review inbox URL from `context-lab serve`.

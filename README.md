@@ -5,7 +5,7 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 You get two surfaces that share one database:
 
 - **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
-- **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
+- **Review inbox (human).** Localhost UI to confirm waiting candidates; Lab tools for browse and preview.
 
 The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
 
@@ -23,7 +23,7 @@ context-lab demo
 context-lab serve
 ```
 
-Open **http://127.0.0.1:8765**. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
+Open **http://127.0.0.1:8765**. Confirm waiting candidates in the browser. That is the human loop. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
 
 For development from a clone:
 
@@ -190,19 +190,21 @@ Without `--text`, the response includes selection traces, need statuses, and a `
 
 The server implements a minimal newline-delimited stdio JSON-RPC tool subset based on the [2025-11-25 MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools). It does not implement Streamable HTTP, roots, resources, sampling, or task extensions. Test compatibility with your particular client.
 
-## Workbench
+## Human UI
 
-The browser UI is a workbench for the current project and ticket. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
+The browser opens as a review inbox for the current project and ticket. Lab tools still expose the layer stack and agent preview. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
 
 ### Layer stack
 
-Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix.
+Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix. Available under Lab tools.
 
-### Review desk
+### Review inbox
 
-Confirm or retract candidate memories. The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+Confirm waiting items in the localhost UI. That is the default human surface. Layer stack browse and agent preview stay under Lab tools.
 
-Candidates sort by blast radius. **Must review** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
+The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+
+Candidates sort by blast radius. **One by one** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch OK** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
 
 ### Agent preview
 

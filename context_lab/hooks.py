@@ -531,7 +531,7 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     elif client == "codex":
         print("  note: Codex needs [features] codex_hooks = true and may require trusting project hooks.")
     print("  Scope alone never enables hooks. This command did.")
-    print("  Next: restart / reconnect the client so it reloads MCP and hooks.")
+    print("  Next: restart / reconnect the client. Confirm waiting candidates at http://127.0.0.1:8765 (context-lab serve).")
     return 0
 
 
@@ -629,7 +629,7 @@ def install_global(client, force=False):
         print("  note: Codex may still need [features] codex_hooks = true for per-repo ambient hooks.")
     print("  Scope alone never enables hooks. --global only wires MCP tools.")
     print("  Ambient inject + git lease: context-lab install --client", client, "--project P --ticket T")
-    print("  Next: restart / reconnect the client so it reloads MCP.")
+    print("  Next: restart / reconnect the client. Confirm waiting candidates at http://127.0.0.1:8765 (context-lab serve).")
     return 0
 
 

@@ -18,16 +18,28 @@
 .review-card .field input[name=title]{font-size:16px;font-weight:680;letter-spacing:-.2px;padding:8px 9px}
 .review-card .claim-box{min-height:120px;font-size:13px;line-height:1.5;font-weight:400}
 .kbd-hint{font-size:10px;color:var(--muted);margin-top:8px}
+.pending-badge{font-size:11px;color:var(--muted);padding:3px 8px;border-radius:999px;background:var(--soft);font-weight:650}
+#lab-tools[aria-pressed="true"]{background:var(--green);border-color:var(--green);color:#fff}
+.empty-inbox{text-align:left;padding:20px 16px}
+.empty-inbox h3{margin:0 0 6px;font-size:15px;font-weight:720}
+.empty-inbox p{margin:0;color:var(--muted);font-weight:400;font-size:12px}
+body.inbox-mode .workbench{grid-template-columns:minmax(300px,.92fr) minmax(340px,1.08fr)}
+body.inbox-mode .agent-preview{display:none}
+body.inbox-mode .review-desk{border-right:0}
+@media(max-width:1100px){body.inbox-mode .workbench{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){body.inbox-mode .workbench{display:block}}
 </style>
 </head>
-<body>
+<body class="inbox-mode">
 <header class="app-header">
   <div class="brand">Context Lab</div>
+  <span id="pending-badge" class="pending-badge">0 waiting</span>
   <label class="header-field">Project <select id="project-select" aria-label="Project"><option value="">Loading</option></select></label>
   <label class="header-field">Ticket <select id="ticket-select" aria-label="Ticket"><option value="">Project defaults</option></select></label>
   <button class="small quiet" id="new-project">New project</button>
   <button class="small quiet" id="new-ticket">New ticket</button>
   <div class="header-actions">
+    <button type="button" class="small" id="lab-tools" aria-pressed="false">Lab tools</button>
     <details class="lab-menu" id="lab-menu"><summary>Lab</summary><div class="lab-popover">
       <button id="open-standing">Standing rules</button>
       <button id="open-benchmark">Benchmark</button>
@@ -37,12 +49,12 @@
 </header>
 <main class="workbench">
   <section class="region layer-stack" id="layer-stack" aria-labelledby="layers-title">
-    <div class="region-head"><h1 id="layers-title">Layer stack</h1><input id="layer-filter" type="search" placeholder="Filter all layers" aria-label="Filter all layers"></div>
+    <div class="region-head"><h1 id="layers-title">To review</h1><input id="layer-filter" type="search" placeholder="Filter waiting" aria-label="Filter waiting"></div>
     <div id="layers"><section class="layer"><div class="layer-head"><h2>Lab rules</h2></div><div class="empty">Loading layers</div></section></div>
   </section>
   <section class="region review-desk" id="review-desk" aria-labelledby="review-title">
-    <div class="region-head"><h2 id="review-title">Review desk</h2></div>
-    <div id="desk"><div class="card empty">Select a memory or evidence record.</div></div>
+    <div class="region-head"><h2 id="review-title">Review</h2></div>
+    <div id="desk"><div class="card empty">Nothing waiting.</div></div>
   </section>
   <aside class="region agent-preview" id="agent-preview" aria-labelledby="preview-title">
     <div class="region-head"><h2 id="preview-title">Agent preview</h2></div>
@@ -290,6 +302,8 @@ function renderChrome(){
   $('ticket-select').value=current.kind==='ticket'?current.ticket:'';
   $('model-planner').disabled=!shell.workbench.capabilities.modelPlanner;
   $('embeddings').disabled=!shell.workbench.capabilities.embeddings;
+  const waiting=shell.workbench.layers.flatMap(layer=>layer.rows).filter(row=>row.access==='review').length;
+  $('pending-badge').textContent=waiting+' waiting';
 }
 function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
 function renderLayers(){
@@ -314,20 +328,24 @@ function renderLayers(){
     const batchBar=batchIds.length
       ?'<div class="batch-bar"><button type="button" class="small" data-batch-all>Select batch</button><button type="button" class="small primary" data-batch-confirm'+(selectedBatch.length?'':' disabled')+'>Confirm selected ('+selectedBatch.length+')</button><button type="button" class="small danger" data-batch-retract'+(selectedBatch.length?'':' disabled')+'>Retract selected</button><span class="hint">j/k move · a confirm · x retract · space select batch</span></div>'
       :'';
-    const tierChips='<div class="tier-filters"><button type="button" class="small'+(tierFilter==='all'?' active':'')+'" data-tier-filter="all">All</button><button type="button" class="small'+(tierFilter==='must'?' active':'')+'" data-tier-filter="must">Must</button><button type="button" class="small'+(tierFilter==='batch'?' active':'')+'" data-tier-filter="batch">Batch</button></div>';
-    return'<section class="layer" data-layer="'+layer.kind+'"><div class="layer-head"><div><h2>'+layerLabel(layer.kind)+'</h2><div class="layer-meta">'+candidates.length+' candidates · '+settled.filter(row=>row.memory.status==='confirmed').length+' confirmed'+tierChips+'</div></div><div class="layer-actions">'+actions+'</div></div>'
-      +renderBand('Candidates',candidates,true)+batchBar+renderBand('Confirmed and retracted',settled,false)
+    const tierChips='<div class="tier-filters"><button type="button" class="small'+(tierFilter==='all'?' active':'')+'" data-tier-filter="all">All</button><button type="button" class="small'+(tierFilter==='must'?' active':'')+'" data-tier-filter="must">One by one</button><button type="button" class="small'+(tierFilter==='batch'?' active':'')+'" data-tier-filter="batch">Batch OK</button></div>';
+    const settledBand=settled.length
+      ?'<details class="advanced"><summary style="padding:0 11px 9px">Confirmed and retracted ('+settled.length+')</summary><div class="advanced-body">'+renderBand('',settled,false)+'</div></details>'
+      :'';
+    return'<section class="layer" data-layer="'+layer.kind+'"><div class="layer-head"><div><h2>'+layerLabel(layer.kind)+'</h2><div class="layer-meta">'+candidates.length+' waiting · '+settled.filter(row=>row.memory.status==='confirmed').length+' confirmed'+tierChips+'</div></div><div class="layer-actions">'+actions+'</div></div>'
+      +renderBand('Waiting',candidates,true)+batchBar+settledBand
       +'<details class="advanced"><summary style="padding:0 11px 9px">Evidence ('+sources.length+')</summary><div class="advanced-body">'+sources.map(source=>'<button type="button" class="row" data-source-id="'+esc(source.id)+'"><span class="row-title">'+esc(source.title)+'</span><span class="row-foot">'+esc(source.id)+'</span></button>').join('')+'</div></details></section>';
   }).join('');
+  if(!candidateRows().length)$('layers').innerHTML='<div class="card empty-inbox"><h3>Nothing to review</h3><p>Agents propose lessons here when they learn something. Confirm them before they affect recall.</p></div>'+$('layers').innerHTML;
 }
 function renderBand(title,rows,candidateBand=false){
   if(!rows.length)return'';
-  return'<div class="band-title">'+title+'</div>'+rows.map(row=>{
+  return(title?'<div class="band-title">'+title+'</div>':'')+rows.map(row=>{
     const selected=shell.selection.kind==='memory'&&shell.selection.row.memory.id===row.memory.id;
     const tier=candidateBand?reviewTier(row.memory):'';
     const canBatch=candidateBand&&tier==='batch'&&row.access==='review';
     const checked=canBatch&&shell.batchSelected.has(row.memory.id);
-    const body='<span class="row-title">'+esc(row.memory.title)+'</span><span class="row-claim">'+esc(row.memory.claim)+'</span><span class="row-foot"><span class="pill '+esc(row.memory.status)+'">'+esc(row.memory.status)+'</span>'+(tier?'<span class="pill '+tier+'">'+(tier==='must'?'must review':'batch')+'</span>':'')+'<span>'+esc(kindLabel(row.memory.kind))+'</span><span>v'+esc(row.memory.version)+'</span></span>';
+    const body='<span class="row-title">'+esc(row.memory.title)+'</span><span class="row-claim">'+esc(row.memory.claim)+'</span><span class="row-foot"><span class="pill '+esc(row.memory.status)+'">'+esc(row.memory.status)+'</span>'+(tier?'<span class="pill '+tier+'">'+(tier==='must'?'one by one':'batch OK')+'</span>':'')+'<span>'+esc(kindLabel(row.memory.kind))+'</span><span>v'+esc(row.memory.version)+'</span></span>';
     if(canBatch){
       return'<div class="row batch-row'+(selected?' selected':'')+'"><input type="checkbox" data-batch-id="'+esc(row.memory.id)+'"'+(checked?' checked':'')+' aria-label="Select for batch"><button type="button" class="row" style="border:0;padding:0;background:transparent;box-shadow:none" data-memory-id="'+esc(row.memory.id)+'">'+body+'</button></div>';
     }
@@ -408,7 +426,7 @@ async function reviseBatch(status){
 }
 function renderDesk(){
   const selection=shell.selection;
-  if(selection.kind==='none'){$('desk').innerHTML='<div class="card empty">Select a memory or evidence record.</div>';return}
+  if(selection.kind==='none'){$('desk').innerHTML='<div class="card empty">'+(candidateRows().length?'Pick something waiting on the left.':'Nothing waiting.')+'</div>';return}
   if(selection.kind==='source'){
     const source=selection.source;
     $('desk').innerHTML='<article class="card"><div class="row-foot"><span class="pill">evidence</span><span>'+esc(source.id)+'</span></div><h3>'+esc(source.title)+'</h3><div class="source-body">'+esc(source.body||'Select Read to load the immutable source.')+'</div><div class="actions"><button data-read-source="'+esc(source.id)+'">Read</button><button data-draft-source="'+esc(source.id)+'"'+(shell.workbench.capabilities.modelPlanner?'':' disabled')+'>Draft lessons</button></div></article>';return;
@@ -429,7 +447,7 @@ function renderDesk(){
         +'</div></details>'
       :'';
     $('desk').innerHTML='<form class="card review-card" id="review-form" data-memory-id="'+esc(m.id)+'">'
-      +'<div class="row-foot"><span class="pill '+tier+'">'+(tier==='must'?'must review':'batch')+'</span><span>'+esc(kindLabel(m.kind))+'</span><span>'+esc(scopeLabel(m))+'</span></div>'
+      +'<div class="row-foot"><span class="pill '+tier+'">'+(tier==='must'?'one by one':'batch OK')+'</span><span>'+esc(kindLabel(m.kind))+'</span><span>'+esc(scopeLabel(m))+'</span></div>'
       +'<label class="field">Title <input name="title" value="'+esc(m.title||'')+'" required></label>'
       +'<label class="field">Claim <textarea class="claim-box" name="claim" required>'+esc(m.claim||'')+'</textarea></label>'
       +'<div class="linked"><strong class="hint">Evidence</strong>'+(m.source_ids||[]).map(id=>'<button type="button" data-source-id="'+esc(id)+'">'+esc(sourceTitle(id))+'</button>').join('')+'</div>'
@@ -605,6 +623,12 @@ $('ticket-select').addEventListener('change',()=>shell.selectWorkspace(workspace
 $('new-project').addEventListener('click',()=>{const value=prompt('New project name');if(value)shell.selectWorkspace(workspace(value)).catch(error=>showToast(error.message,true))});
 $('new-ticket').addEventListener('click',()=>{const value=prompt('New ticket ID');if(value)shell.selectWorkspace(workspace(shell.workspace.project,value)).catch(error=>showToast(error.message,true))});
 $('layer-filter').addEventListener('input',renderLayers);
+$('lab-tools').addEventListener('click',()=>{
+  const lab=!document.body.classList.contains('lab-mode');
+  document.body.classList.toggle('lab-mode',lab);
+  document.body.classList.toggle('inbox-mode',!lab);
+  $('lab-tools').setAttribute('aria-pressed',lab?'true':'false');
+});
 $('open-standing').addEventListener('click',()=>openStanding());
 $('open-benchmark').addEventListener('click',()=>{$('benchmark-dialog').showModal();$('lab-menu').open=false});
 $('export-data').addEventListener('click',async()=>{try{download('context-lab-export.json',await api('export'))}catch(error){showToast(error.message,true)}});

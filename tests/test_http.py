@@ -33,6 +33,7 @@ class HTTPTests(unittest.TestCase):
             cls.process.wait(timeout=5)
             raise RuntimeError("HTTP server startup failed: " + line)
         cls.base = line.split(" at ", 1)[1]
+        cls.boot_pending = cls.process.stdout.readline().strip()
 
     @classmethod
     def tearDownClass(cls):
@@ -55,6 +56,18 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("Context Lab", page)
         self.assertNotIn('<option value="__global__"', page)
         self.assertIn('id="layer-stack"', page)
+        self.assertIn("To review", page)
+        self.assertIn("Nothing waiting.", page)
+        self.assertIn('id="pending-badge"', page)
+        self.assertIn("inbox-mode", page)
+        self.assertIn("Lab tools", page)
+        store = Store(self.db_path)
+        try:
+            waiting = sum(1 for m in store.memories() if m.get("status") == "candidate")
+        finally:
+            store.close()
+        expected = "Nothing waiting to confirm" if waiting == 0 else f"{waiting} waiting to confirm"
+        self.assertEqual(self.boot_pending, expected)
         self.assertIn("Lab rules", page)
         self.assertNotIn("Give the next decision", page)
         cases = self.request("/api/scenarios")["cases"]
