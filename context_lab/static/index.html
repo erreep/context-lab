@@ -199,7 +199,8 @@ function parseWorkbench(ws,data){
       sources:allSources.filter(item=>layerKey(item)===key)
     })),
     feedback:data.feedback||[],
-    capabilities:{modelPlanner:!!data.model_available,embeddings:!!data.embeddings_available}
+    capabilities:{modelPlanner:!!data.model_available,embeddings:!!data.embeddings_available},
+    inbox:data.inbox||null
   };
 }
 function parseComparison(data){
@@ -282,6 +283,7 @@ const shell={
 };
 
 function syncUrl(){
+  if(!shell.workspace)return;
   const url=new URL(location.href);url.searchParams.set('project',shell.workspace.project);
   if(shell.workspace.kind==='ticket')url.searchParams.set('ticket',shell.workspace.ticket);else url.searchParams.delete('ticket');
   history.replaceState(null,'',url);
@@ -291,6 +293,7 @@ function render(){
 }
 function renderChrome(){
   const current=shell.workspace;
+  if(!current)return;
   const projects=[...shell.catalog.map(item=>item.id)];
   if(!projects.includes(current.project))projects.push(current.project);
   $('project-select').innerHTML=projects.sort().map(id=>'<option value="'+esc(id)+'">'+esc(id)+'</option>').join('');
@@ -336,7 +339,10 @@ function renderLayers(){
       +renderBand('Waiting',candidates,true)+batchBar+settledBand
       +'<details class="advanced"><summary style="padding:0 11px 9px">Evidence ('+sources.length+')</summary><div class="advanced-body">'+sources.map(source=>'<button type="button" class="row" data-source-id="'+esc(source.id)+'"><span class="row-title">'+esc(source.title)+'</span><span class="row-foot">'+esc(source.id)+'</span></button>').join('')+'</div></details></section>';
   }).join('');
-  if(!candidateRows().length)$('layers').innerHTML='<div class="card empty-inbox"><h3>Nothing to review</h3><p>Agents propose lessons here when they learn something. Confirm them before they affect recall.</p></div>'+$('layers').innerHTML;
+  if(!candidateRows().length){
+    const box=shell.workbench.inbox||{headline:'You\'re set up. Nothing to review yet.',body:'Agents propose lessons here when they learn something. Confirm them before they affect recall.'};
+    $('layers').innerHTML='<div class="card empty-inbox"><h3>'+esc(box.headline)+'</h3><p>'+esc(box.body)+'</p></div>'+$('layers').innerHTML;
+  }
 }
 function renderBand(title,rows,candidateBand=false){
   if(!rows.length)return'';
@@ -647,8 +653,22 @@ $('run-benchmark').addEventListener('click',async()=>{try{$('run-benchmark').dis
     const params=new URLSearchParams(location.search),legacy=params.get('project')==='__global__';
     const [scopes,scenarios]=await Promise.all([api('scopes'),api('scenarios')]);
     shell.catalog=parseCatalog(scopes);shell.scenarios=scenarios.cases||[];
-    const first=shell.catalog[0]?.id||'fieldnote';
-    const initial=workspace(legacy?first:(params.get('project')||first),legacy?'':(params.get('ticket')||''));
+    const requested=params.get('project');
+    const first=shell.catalog[0]?.id||'';
+    const project=legacy?first:(requested||first);
+    if(!project){
+      const info=await api('info');
+      shell.workspace=null;
+      shell.workbench={workspace:null,layers:[],feedback:[],capabilities:{modelPlanner:!!info.model_available,embeddings:!!info.embeddings_available},inbox:info.inbox||null};
+      shell.selection={kind:'none'};
+      $('scenario').innerHTML='<option value="">Custom task</option>'+shell.scenarios.map(item=>'<option value="'+esc(item.id)+'">'+esc(item.label)+'</option>').join('');
+      $('project-select').innerHTML='<option value="">No project yet</option>';
+      $('ticket-select').innerHTML='<option value="">Project defaults</option>';
+      $('pending-badge').textContent='0 waiting';
+      renderLayers();renderDesk();
+      return;
+    }
+    const initial=workspace(project,legacy?'':(params.get('ticket')||''));
     shell.workspace=initial;shell.workbench=await workspacePort.open(initial);
     const pending=shell.workbench.layers.flatMap(layer=>layer.rows).find(row=>row.access==='review');
     if(pending)shell.selection={kind:'memory',row:pending};

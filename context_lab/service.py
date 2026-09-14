@@ -67,6 +67,7 @@ def scopes(store):
 
 
 def info(store, project=None, ticket=None):
+    from .review import inbox_state
     bases = store.knowledge_bases()
     scope_rows = store.list_scope_rows()
     projects = sorted({s["project"] for s in store.sources()} | {b["project"] for b in bases} | {GLOBAL_PROJECT},
@@ -94,9 +95,11 @@ def info(store, project=None, ticket=None):
         payload["feedback"] = [f for f in payload["feedback"]
                                if isinstance(f.get("task"), dict) and scope_key(f["task"]) == key]
         payload["scope"] = next((r for r in scope_rows if r["project"] == project and r["ticket"] == ticket), None)
+        payload["inbox"] = inbox_state(store, project, ticket)
     else:
         payload["memories"] = store.memories()
         payload["sources"] = store.sources()
         payload["inherited_memories"] = []
         payload["inherited_sources"] = []
+        payload["inbox"] = inbox_state(store)
     return payload

@@ -533,7 +533,13 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     elif client == "codex":
         print("  note: Codex needs [features] codex_hooks = true and may require trusting project hooks.")
     print("  Scope alone never enables hooks. This command did.")
-    print("  Next: restart / reconnect the client. Confirm waiting candidates at http://127.0.0.1:8765 (context-lab serve).")
+    print("  Next: restart / reconnect the client.")
+    from .engine import DEFAULT_DB
+    from .review import ReviewRoute, print_install_handoff
+    print_install_handoff(
+        scope.get("db") or DEFAULT_DB,
+        ReviewRoute(project=scope["project"], ticket=scope.get("ticket") or ""),
+    )
     if bound_ticket == "":
         print("  Next: rebind with hook set-scope --project P --ticket T when you have a ticket.")
     return 0
@@ -633,7 +639,10 @@ def install_global(client, force=False):
         print("  note: Codex may still need [features] codex_hooks = true for per-repo ambient hooks.")
     print("  Scope alone never enables hooks. --global only wires MCP tools.")
     print("  Ambient inject + git lease: context-lab install --client", client, "--project P --ticket T")
-    print("  Next: restart / reconnect the client. Confirm waiting candidates at http://127.0.0.1:8765 (context-lab serve).")
+    print("  Next: restart / reconnect the client.")
+    from .engine import DEFAULT_DB
+    from .review import print_install_handoff
+    print_install_handoff(DEFAULT_DB)
     return 0
 
 
