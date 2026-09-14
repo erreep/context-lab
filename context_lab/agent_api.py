@@ -1,12 +1,9 @@
 """Deep agent surface: initiate modes, lab vault binding, context shaping, propose hints."""
 from __future__ import annotations
 
-import hashlib
 import os
-import re
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context, plan_task
@@ -15,11 +12,30 @@ from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
 
 
+def _finish_initiate(store, result, *, auto_detected=False):
+    created = False
+    status = result.get("status")
+    if status not in {"needs_obsidian_vault", "needs_knowledge_base"} and result.get("ticket"):
+        try:
+            _, created = knowledge_mod.ensure_journal_home(
+                store, result.get("project", ""), result.get("ticket", ""))
+        except OSError:
+            created = False
+    out = knowledge_mod.with_obsidian(
+        result, store, auto_detected=auto_detected, folder_created=created)
+    # Provision may bind path after empty initiate; echo it so callers need not dig into obsidian.
+    notes = out.get("obsidian", {}).get("notes")
+    if notes and not out.get("path"):
+        out["path"] = notes
+    return out
+
+
 def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, refresh=False):
     """One-shot setup. Prefer knowledge={mode, vault?}; legacy path/empty still work.
 
     First OS touch (lab vault undecided) auto-detects Obsidian via app config, else
     returns needs_obsidian_vault until knowledge.vault is a path/'none'.
+    auto/empty with a bound vault and a ticket provisions Context Lab/{project}/{ticket}.
     """
     project, ticket = scope_key({"project": project, "ticket": ticket})
     vault_arg = None
@@ -41,14 +57,12 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
 
     # Vault-only configure (lab-wide); no ticket notes work.
     if ticket == "" and mode is None and path is None and not empty and vault_arg is not None:
-        return knowledge_mod.with_obsidian(
-            {"status": "vault_configured", "project": project, "ticket": ""},
-            store, auto_detected=False)
+        return _finish_initiate(
+            store, {"status": "vault_configured", "project": project, "ticket": ""}, auto_detected=False)
 
     if binding["state"] == "undecided":
-        return knowledge_mod.with_obsidian(
-            {"status": "needs_obsidian_vault", "project": project, "ticket": ticket},
-            store, auto_detected=False)
+        return _finish_initiate(
+            store, {"status": "needs_obsidian_vault", "project": project, "ticket": ticket}, auto_detected=False)
 
     if knowledge is not None:
         previous = store.knowledge_base(project, ticket)
@@ -66,32 +80,32 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
                     field="knowledge.mode",
                     hint="Pass knowledge={mode:'auto'} for first setup",
                 )
-            return knowledge_mod.with_obsidian(
-                knowledge_mod.initiate(store, project, ticket), store, auto_detected=auto_detected)
+            return _finish_initiate(
+                store, knowledge_mod.initiate(store, project, ticket), auto_detected=auto_detected)
         if mode == "auto":
             if previous and not refresh:
-                return knowledge_mod.with_obsidian(
-                    knowledge_mod.initiate(store, project, ticket), store, auto_detected=auto_detected)
+                return _finish_initiate(
+                    store, knowledge_mod.initiate(store, project, ticket), auto_detected=auto_detected)
             if kpath:
-                return knowledge_mod.with_obsidian(
-                    knowledge_mod.initiate(store, project, ticket, path=kpath, refresh=refresh),
-                    store, auto_detected=auto_detected)
-            return knowledge_mod.with_obsidian(
-                knowledge_mod.initiate(store, project, ticket, empty=True, refresh=refresh),
-                store, auto_detected=auto_detected)
+                return _finish_initiate(
+                    store, knowledge_mod.initiate(store, project, ticket, path=kpath, refresh=refresh),
+                    auto_detected=auto_detected)
+            return _finish_initiate(
+                store, knowledge_mod.initiate(store, project, ticket, empty=True, refresh=refresh),
+                auto_detected=auto_detected)
         if mode == "empty":
-            return knowledge_mod.with_obsidian(
-                knowledge_mod.initiate(store, project, ticket, empty=True, refresh=refresh),
-                store, auto_detected=auto_detected)
+            return _finish_initiate(
+                store, knowledge_mod.initiate(store, project, ticket, empty=True, refresh=refresh),
+                auto_detected=auto_detected)
         if not isinstance(kpath, str) or not kpath.strip():
             raise AgentError("missing_field", "knowledge.path required for mode=import", field="knowledge.path")
-        return knowledge_mod.with_obsidian(
-            knowledge_mod.initiate(store, project, ticket, path=kpath, refresh=refresh),
-            store, auto_detected=auto_detected)
+        return _finish_initiate(
+            store, knowledge_mod.initiate(store, project, ticket, path=kpath, refresh=refresh),
+            auto_detected=auto_detected)
 
-    return knowledge_mod.with_obsidian(
-        knowledge_mod.initiate(store, project, ticket, path=path, empty=empty, refresh=refresh),
-        store, auto_detected=auto_detected)
+    return _finish_initiate(
+        store, knowledge_mod.initiate(store, project, ticket, path=path, empty=empty, refresh=refresh),
+        auto_detected=auto_detected)
 
 
 def context(store, task, budget=1200, detail="agent"):
@@ -186,7 +200,7 @@ JOURNAL_KINDS = frozenset({"plan", "decision", "progress", "handoff"})
 
 
 def journal(store, project, ticket, kind, title, body):
-    """Write evidence into the bound ticket folder and index it immediately."""
+    """Write one durable ticket note and index it. Provisions a vault folder if that is all that is missing."""
     project, ticket = scope_key({"project": project, "ticket": ticket})
     if kind not in JOURNAL_KINDS:
         raise AgentError("validation", "kind must be plan|decision|progress|handoff", field="kind")
@@ -194,59 +208,44 @@ def journal(store, project, ticket, kind, title, body):
         raise AgentError("validation", "title required", field="title")
     if not isinstance(body, str) or not body.strip():
         raise AgentError("validation", "body required", field="body")
-    if not ticket:
-        raise AgentError("no_ticket_folder", "journal requires a ticket with a bound notes folder", field="ticket")
-    kb = store.knowledge_base(project, ticket)
-    if not kb or not isinstance(kb.get("path"), str) or not kb["path"].strip():
-        raise AgentError(
-            "no_ticket_folder",
-            "Ticket has no bound Obsidian/notes folder",
-            field="ticket",
-            hint="Initiate with knowledge.mode import and a path, or bind a folder first",
-        )
-    root = Path(kb["path"]).expanduser().resolve(strict=True)
-    created = datetime.now(timezone.utc)
-    stamp = created.strftime("%Y%m%dT%H%M%SZ")
-    slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:48] or "entry"
-    # Content digest in the name makes a retry find its earlier file instead of writing a second one.
-    digest = hashlib.sha256(f"{kind}\n{title.strip()}\n{body.strip()}".encode()).hexdigest()[:8]
-    journal_dir = root / "journal"
-    journal_dir.mkdir(parents=True, exist_ok=True)
-    dest = next(iter(sorted(journal_dir.glob(f"{kind}-*-{slug}-{digest}.md"))),
-                journal_dir / f"{kind}-{stamp}-{slug}-{digest}.md")
-    if dest.exists():
-        return _journal_result(store, project, ticket, root, dest, kind)
-    front = (
-        f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
-        f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n---\n\n"
-        f"# {title.strip()}\n\n{body.strip()}\n"
-    )
-    fd, tmp = tempfile.mkstemp(prefix=".journal-", suffix=".md", dir=str(journal_dir))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(front)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, dest)
-    except Exception:
+        home, _created = knowledge_mod.require_journal_home(store, project, ticket)
+    except ValueError as e:
+        raise AgentError("journal_not_ready", str(e), field="ticket") from e
+    dest, already = knowledge_mod.journal_note_path(home.notes, kind, title, body)
+    if not already:
+        created = datetime.now(timezone.utc)
+        digest = knowledge_mod.journal_digest(kind, title, body)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        front = (
+            f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
+            f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+            f"digest: {digest}\n---\n\n"
+            f"# {title.strip()}\n\n{body.strip()}\n"
+        )
+        fd, tmp = tempfile.mkstemp(prefix=".journal-", suffix=".md", dir=str(dest.parent))
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    return _journal_result(store, project, ticket, root, dest, kind)
-
-
-def _journal_result(store, project, ticket, root, dest, kind):
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(front)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, dest)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     indexed = knowledge_mod.index_ticket_file(store, project, ticket, dest)
-    return {
-        "path": str(dest),
-        "relative_path": dest.relative_to(root).as_posix(),
+    out = {
+        "path": indexed["path"],
         "kind": kind,
-        "project": project,
-        "ticket": ticket,
-        "index": indexed,
+        "status": indexed["status"],
+        "source_id": indexed["source_id"],
     }
+    if "chunks" in indexed:
+        out["chunks"] = indexed["chunks"]
+    return out
 
 
 def allocate_ticket():

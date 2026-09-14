@@ -26,18 +26,18 @@ select Context Lab in the skills picker and write `/initiate`.
    Never invent a ticket silently without that confirmation.
 4. On first OS touch for this Context Lab DB, vault binding is lab-wide. The server
    auto-detects an Obsidian vault from the Obsidian app config (preferred) or shallow
-   common folders, binds it, and sets `obsidian.auto_detected: true` so you can tell
-   the user. If none is found, `memory_initiate` returns `needs_obsidian_vault` with
-   `obsidian.journaling: "unavailable"`. Ask for a vault root **or** any folder where
-   journals may be saved (`knowledge.vault`), or `knowledge.vault: "none"` if they do
-   not want journaling.
+   common folders and binds it. If it created something, `obsidian.announce` tells you
+   what to relay. If none is found, `memory_initiate` returns `needs_obsidian_vault`
+   with `obsidian.journaling: "unavailable"`. Ask for a vault root (`knowledge.vault`),
+   or `knowledge.vault: "none"` if they do not want a lab vault.
 5. Call `memory_initiate` with `project`, `ticket`, and `knowledge: { "mode": ... }`
    (vault only needed when still undecided / not auto-found). Use `mode: "import"` +
-   `path` for a ticket notes folder when they named one.
-6. Read `response.obsidian`. If auto-detected, notify the user of the path. If
-   `journaling` is `"unavailable"`, say clearly that journaling will not work until
-   they provide a vault/journal folder. **Only if `journaling` is `"available"`**,
-   ask optional session journal under `{vault}/Cl/{datetimestart}/` (default no).
+   `path` for an existing ticket notes folder. `mode: "auto"` or `"empty"` with a
+   bound vault and a ticket provisions `{vault}/Context Lab/{project}/{ticket}/`.
+6. Read `response.obsidian`. If `announce` is set, tell the user. If `journaling` is
+   `"unavailable"` or `"vault_only"`, follow `obsidian.next`. When `"ready"`, write
+   durable notes with `memory_journal` (`kind` plan|decision|progress|handoff) under
+   `journal/<kind>-<slug>.md`.
 7. Report identity, vault/journaling status, and import counts.
 
 Hard gates (also in `gates.md`, MCP `initialize.instructions`, and `AGENTS.md`):
@@ -46,9 +46,8 @@ history-dependent decisions.
 
 The importer snapshots `.md`, `.markdown` and `.txt` notes without changing the
 originals. It splits by headings and size, preserves source evidence, and assigns
-simple keyword categories from file paths and headings. It skips `Cl/` session
-folders, hidden files, symlinks and unsupported types. This is local indexing,
-not semantic verification.
+simple keyword categories from file paths and headings. It skips hidden files,
+symlinks and unsupported types. This is local indexing, not semantic verification.
 
 ## Recall and write in the selected scope
 
@@ -59,6 +58,10 @@ when known. Retrieval always layers **lab-wide** (`__global__`) → **project ba
 result, check gaps, and use `memory_source` with the same project/ticket to inspect
 original evidence when needed (ancestor-layer sources are allowed). Keep `run_id`
 for feedback. Do not dump the entire knowledge base into the conversation.
+
+Use `memory_journal` for plan, decision, progress, or handoff notes once
+`obsidian.journaling` is `ready`. It writes one Markdown file under the ticket
+folder and indexes it immediately. Do not invent a second notes layout.
 
 Pass the same `project` and `ticket` to `memory_observe`, and on each candidate in
 `memory_propose`. A missing ticket means project baseline, never “all tickets”.

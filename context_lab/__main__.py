@@ -21,7 +21,7 @@ def main():
     setup.add_argument("--path", help="Local Markdown/text folder for ticket notes (not necessarily the vault root)")
     setup.add_argument("--empty", action="store_true", help="Initialize ticket notes without existing files")
     setup.add_argument("--vault", help="Obsidian vault root path (required on first project touch unless --no-vault)")
-    setup.add_argument("--no-vault", action="store_true", help="Explicitly decline an Obsidian vault (journaling unavailable)")
+    setup.add_argument("--no-vault", action="store_true", help="Decline a lab vault (import a ticket folder to journal)")
     setup.add_argument("--refresh", action="store_true", help="Explicitly refresh an existing snapshot")
     web = sub.add_parser("serve", help="Run the local inspection UI")
     web.add_argument("--port", type=int, default=8765)
