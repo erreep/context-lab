@@ -98,7 +98,7 @@ cd /path/to/project
 context-lab install --client codex --project my-project --ticket PROJ-123
 ```
 
-That binds scope, writes MCP config, writes client hooks, and installs the git commit lease. Use `--client claude` or `--client cursor` for those hosts.
+That binds scope, writes MCP config, writes client hooks, and installs the git commit lease. Use `--client claude` or `--client cursor` for those hosts. To bind the project baseline without a ticket, omit `--ticket` or pass `--ticket ""`. Rebind later with `context-lab hook set-scope --project P --ticket T`.
 
 | Client | Ambient CompactView inject | What install writes |
 |---|---|---|
