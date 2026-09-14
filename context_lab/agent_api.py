@@ -165,7 +165,7 @@ def propose(store, memories):
                 "memory_exists_revise_via_ui",
                 "Use a new candidate ID; existing memories are revised through review",
                 field="id",
-                hint="Open http://127.0.0.1:8765 Memories tab",
+                hint="Open the review UI with: context-lab review",
             )
         entries.append(dict(draft, status="candidate"))
     saved = store.put_memories(entries)

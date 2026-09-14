@@ -191,7 +191,7 @@ def activation_hint(store, project, ticket=""):
     pending = sum(1 for m in store.memories(project, ticket) if m.get("status") == "candidate")
     return {
         "via": "ui",
-        "url": "http://127.0.0.1:8765",
+        "command": "context-lab review",
         "pending_candidates": pending,
         "message": "Candidates stay out of retrieval until confirmed in the local UI.",
     }

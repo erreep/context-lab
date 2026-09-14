@@ -25,6 +25,11 @@ def main():
     setup.add_argument("--refresh", action="store_true", help="Explicitly refresh an existing snapshot")
     web = sub.add_parser("serve", help="Run the local inspection UI")
     web.add_argument("--port", type=int, default=8765)
+    rev = sub.add_parser("review", help="Open the local review UI, starting serve if needed")
+    rev.add_argument("--project", default=None)
+    rev.add_argument("--ticket", default="")
+    rev.add_argument("--port", type=int, default=8765)
+    rev.add_argument("--no-browser", action="store_true", help="Print the live URL without opening a browser")
     context = sub.add_parser("context", help="Build a context packet from a task JSON file")
     context.add_argument("--task", required=True)
     context.add_argument("--strategy", choices=STRATEGIES, default="targeted")
@@ -115,6 +120,17 @@ def main():
         except (ValueError, KeyError, OSError) as e:
             print("Error: " + str(e), file=sys.stderr)
             return 1
+    if args.command == "review":
+        from .review import ReviewRoute, format_outcome, open_review
+        route = ReviewRoute(args.project, args.ticket or "") if args.project else None
+        outcome = open_review(
+            args.db,
+            route,
+            open_browser=not args.no_browser,
+            preferred_port=args.port,
+        )
+        print(format_outcome(outcome))
+        return outcome.exit_code
     store = Store(args.db)
     try:
         if args.command == "demo":

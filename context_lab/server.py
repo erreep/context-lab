@@ -47,6 +47,9 @@ def serve(db_path, host="127.0.0.1", port=8765):
                 # Expected IDs are deliberately omitted from the interactive task picker.
                 suite = json.loads((DATA_ROOT / "scenarios.json").read_text())
                 return self.send(200, {"cases": [{k: v for k, v in c.items() if k != "expected"} for c in suite["cases"]]})
+            if path == "/api/health":
+                from .review import health_payload
+                return self.send(200, health_payload(db_path))
             store = Store(db_path)
             try:
                 if path == "/api/scopes":
