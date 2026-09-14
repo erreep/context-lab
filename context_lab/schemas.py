@@ -4,22 +4,42 @@ from __future__ import annotations
 import json
 import math
 
-GATE_TEXT = """# Context Lab hard gates
+# Single runtime agent contract. MCP initialize, SessionStart, and soft rules reuse this.
+# Ambient clients (Claude/Codex) already inject standing context — mid-task recall is optional there.
+# Soft clients (Cursor) must call memory_context after scope bind and whenever history matters.
+GATE_TEXT = """# Context Lab contract
 
-With worktree scope set, Claude Code and Codex inject a scoped CompactView on every prompt. Cursor does not. Before `git commit`, run `python3 -m context_lab hook recall-for --purpose commit`. The Git hook verifies the lease (retrieval under bound conditions, not comprehension). Client hooks are guardrails, not a security boundary.
+1. Commit: run `python3 -m context_lab hook recall-for --purpose commit` before `git commit` (lease = retrieval under bound git state, not comprehension).
+2. Soft clients (Cursor: no ambient inject): call `memory_context` after scope bind and before history-dependent decisions. Ambient clients (Claude/Codex) already inject standing context.
+3. Candidates never affect retrieval until confirmed in the local UI. Propose one sharp ticket-scoped claim per outcome (`title` + `claim` + `source_ids`).
+4. Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
 
-Call `memory_context` before:
-1. After `memory_initiate` / allocate-ticket (or choosing an existing scope), before other work.
-2. Before every `git commit` or `git push`.
-3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
-
-Setup is not recall. Candidates never affect retrieval until confirmed in the local UI.
-Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
+Setup is not recall. Client hooks are guardrails, not a security boundary.
 """
 
 KINDS = ["fact", "constraint", "decision", "event", "lesson", "standing_rule"]
 # agent/prose = CompactView (default MCP). inspect/full = TraceView keys for workbench.
 DETAIL_LEVELS = frozenset({"agent", "prose", "inspect", "full"})
+# Workbench review desk only — not persisted. High blast-radius memories need one-at-a-time confirm.
+MUST_REVIEW_KINDS = frozenset({"constraint", "standing_rule"})
+
+
+def review_tier(memory):
+    """Derive review urgency from existing fields. Presentation only; never stored.
+
+    must  — lab-wide, baseline, constraints, standing rules (read before confirm)
+    batch — ticket-scoped facts/events/decisions/lessons (multi-confirm ok)
+    """
+    if not isinstance(memory, dict):
+        return "must"
+    project = str(memory.get("project") or "")
+    ticket = str(memory.get("ticket") or "").strip()
+    kind = str(memory.get("kind") or "")
+    if project == "__global__" or kind in MUST_REVIEW_KINDS or not ticket:
+        return "must"
+    return "batch"
+
+
 STANDING_RESERVE_RATIO = 0.25
 STANDING_MAX_TOKENS = 500
 STANDING_MIN_TOKENS = 300

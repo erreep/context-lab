@@ -96,7 +96,13 @@ def serve(db_path, host="127.0.0.1", port=8765):
                 logging.exception("Request failed")
                 self.send(500, {"error": "Local request failed. See server log."})
     server = ThreadingHTTPServer((host, port), Handler)
+    store = Store(db_path)
+    try:
+        waiting = sum(1 for m in store.memories() if m.get("status") == "candidate")
+    finally:
+        store.close()
     print(f"Context Lab is running at http://{host}:{server.server_address[1]}", flush=True)
+    print("Nothing waiting to confirm" if waiting == 0 else f"{waiting} waiting to confirm", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -15,3 +15,4 @@ results/
 # Per-repository hooks are explicit local opt-ins.
 .claude/settings.json
 .codex/hooks.json
+.codex/config.toml

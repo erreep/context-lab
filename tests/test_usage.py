@@ -107,7 +107,9 @@ class UsageTests(unittest.TestCase):
             self.assertEqual(row["response_estimated_tokens"], (len(text.encode()) + 3) // 4)
             self.assertEqual(row["ticket"], "768")
             if operation == "SessionStart":
-                self.assertTrue(text.startswith(GATE_TEXT.strip()))
+                # Standing packet + short stub; full GATE_TEXT lives on MCP initialize, not re-dumped here.
+                self.assertTrue(text.startswith("Context Lab: standing context"))
+                self.assertNotIn(GATE_TEXT.strip().splitlines()[0], text.splitlines()[:1])
         self.assertEqual(usage.report(self.store, "app", "768")["events"], 2)
 
     def test_journal_is_metered_once_per_call_even_on_retry(self):

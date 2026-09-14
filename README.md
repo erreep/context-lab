@@ -5,7 +5,7 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 You get two surfaces that share one database:
 
 - **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
-- **Workbench (human).** A localhost browser UI to confirm candidates, preview agent context, and run lab utilities.
+- **Review inbox (human).** Localhost UI to confirm waiting candidates; Lab tools for browse and preview.
 
 The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
 
@@ -23,7 +23,7 @@ context-lab demo
 context-lab serve
 ```
 
-Open **http://127.0.0.1:8765**. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
+Open **http://127.0.0.1:8765**. Confirm waiting candidates in the browser. That is the human loop. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
 
 For development from a clone:
 
@@ -91,44 +91,58 @@ codex plugin add context-lab@context-lab
 
 The plugin intentionally calls `context-lab mcp`; it does not hide or duplicate the local Python prerequisite. Installing the package or plugin does **not** enable hooks.
 
-Hooks are opt-in per repository. Run these commands only when you want that repository to receive ambient recall and the commit gate:
+Hooks are opt-in per repository. Prefer the one-shot local installer:
 
 ```bash
 cd /path/to/project
-context-lab hook set-scope --project my-project --ticket PROJ-123
-context-lab hook install-git
-mkdir -p .codex
-context-lab hook print-config codex > .codex/hooks.json
+context-lab install --client codex --project my-project --ticket PROJ-123
 ```
 
-Use `claude` or `cursor` instead of `codex` for those clients. Codex hooks require `[features] codex_hooks = true`.
-Setting a Context Lab scope alone never installs or enables hooks. This repository does not ship active client hook files; `hook print-config` is the explicit opt-in step.
+That binds scope, writes MCP config, writes client hooks, and installs the git commit lease. Use `--client claude` or `--client cursor` for those hosts.
 
-### Hard gates
+| Client | Ambient CompactView inject | What install writes |
+|---|---|---|
+| `claude` | Yes (`SessionStart` + `UserPromptSubmit`) | `.mcp.json`, `.claude/settings.json`, git lease |
+| `codex` | Yes (needs `[features] codex_hooks = true`) | `.codex/config.toml`, `.codex/hooks.json`, git lease |
+| `cursor` | **No** — Cursor has no prompt injection | `.cursor/mcp.json`, `.cursor/hooks.json` (git gate only), `.cursor/rules/context-lab-memory.mdc`, git lease |
 
-Call `memory_context` before:
+Scope alone never enables hooks. `install` is what enables them. Advanced/manual path: `hook set-scope`, `hook install-git`, and `hook print-config` still work. This repository does not ship active client hook files.
 
-1. After `memory_initiate` or `memory_allocate_ticket` (or after you choose an existing project/ticket scope), before other work.
-2. Before every `git commit` or `git push`.
-3. Before any decision that depends on prior incidents, constraints, lessons, or project state.
+Machine-wide MCP (tools available in every project, **no** ambient inject, **no** git lease):
 
-Setup is not recall. Initializing a ticket does not load standing rules until you call `memory_context`.
+```bash
+context-lab install --global --client claude   # ~/.claude.json mcpServers
+context-lab install --global --client codex    # ~/.codex/config.toml
+context-lab install --global --client cursor   # ~/.cursor/mcp.json (+ soft-contract rules)
+```
 
-Candidates never affect retrieval until you confirm them in the workbench. A prior agent suggestion is not a confirmed project change.
+`--global` only wires MCP (and Cursor’s soft-contract rules). Ambient CompactView and the commit lease still require a per-repo `install --client … --project … --ticket …`.
+
+
+### Agent contract
+
+Runtime source: MCP `initialize.instructions` (`GATE_TEXT`).
+
+1. Before `git commit`, run `context-lab hook recall-for --purpose commit`.
+2. Soft clients (Cursor: no ambient inject) call `memory_context` after scope bind and before history-dependent work. Ambient clients (Claude/Codex) already inject standing context.
+3. Candidates stay inert until confirmed in the workbench. Propose one sharp ticket-scoped `title`+`claim`+`source_ids` per outcome.
+4. Lab-wide writes need explicit user approval and `confirm_global=true`.
+
+Setup is not recall.
 
 ### Suggested agent loop
 
-1. **Initiate scope** once per project/ticket (`memory_initiate`). Allocate a ticket id if the user has notes but no ticket yet (`memory_allocate_ticket`).
-2. **Discover vocabulary** when needed (`memory_catalog`).
-3. **Recall before deciding** (`memory_context` with query, project, optional ticket, actions, needs, and known state).
-4. **Read evidence** when a condition or rationale matters (`memory_source`).
-5. **Record observations** after work (`memory_observe`).
-6. **Propose generalizations** as candidates (`memory_propose`). Optional model-assisted drafts via `draft` when an endpoint is configured.
-7. **Report outcomes** using the `run_id` from context (`memory_feedback`).
+1. **Scope** once (`memory_initiate` / `memory_allocate_ticket` as needed).
+2. **Recall** — soft clients (Cursor) call `memory_context` after bind and before history-dependent work; ambient clients already get standing inject and call `memory_context` for focused queries / commit.
+3. **Read evidence** when a condition matters (`memory_source`).
+4. **Record** observations (`memory_observe`); propose one sharp ticket-scoped candidate (`memory_propose`: title+claim+source_ids).
+5. **Commit** — `context-lab hook recall-for --purpose commit` before `git commit`.
+6. **Feedback** optional via `run_id` (`memory_feedback`).
 
 Suggested instruction block for agent prompts:
 
-> Before a decision that depends on project history, call memory_context with the next action, known current state, and project. Read linked sources when a condition or rationale matters. Resolve consequential gaps. After an observed outcome, record the evidence. Propose generalizations as candidates and report missed context using the run_id. A previous agent's suggestion is not a confirmed project change.
+> Soft clients: call memory_context after scope bind and before history-dependent decisions. Ambient clients already inject standing context. Before git commit, run recall-for. After outcomes, observe evidence and propose one durable ticket-scoped candidate. Candidates stay inert until UI confirm. A prior agent suggestion is not a confirmed project change.
+
 
 ### MCP tools
 
@@ -176,17 +190,21 @@ Without `--text`, the response includes selection traces, need statuses, and a `
 
 The server implements a minimal newline-delimited stdio JSON-RPC tool subset based on the [2025-11-25 MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools). It does not implement Streamable HTTP, roots, resources, sampling, or task extensions. Test compatibility with your particular client.
 
-## Workbench
+## Human UI
 
-The browser UI is a workbench for the current project and ticket. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
+The browser opens as a review inbox for the current project and ticket. Lab tools still expose the layer stack and agent preview. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
 
 ### Layer stack
 
-Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix.
+Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix. Available under Lab tools.
 
-### Review desk
+### Review inbox
 
-Confirm or retract candidate memories. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+Confirm waiting items in the localhost UI. That is the default human surface. Layer stack browse and agent preview stay under Lab tools.
+
+The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+
+Candidates sort by blast radius. **One by one** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch OK** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
 
 ### Agent preview
 
