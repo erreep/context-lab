@@ -618,6 +618,8 @@ document.addEventListener('submit',async event=>{
         const current=globalGovernancePort.load().rows.find(row=>row.memory.id===draft.id)?.memory;
         if(!current)throw new Error('Reload standing rules before revising this memory.');
         draft={...current,...draft};
+        // Apply lab-wide on a waiting rule is the confirm step; keep retracted if they chose it.
+        if(current.status==='candidate'&&draft.status!=='retracted')draft.status='confirmed';
       }else draft.status='candidate';
       validateCoverage(draft.source_ids,'lab');requestGlobal({kind:version?'revise':'candidate',draft,expectedVersion:version},draft.claim);return;
     }
@@ -641,7 +643,7 @@ $('open-benchmark').addEventListener('click',()=>{$('benchmark-dialog').showModa
 $('export-data').addEventListener('click',async()=>{try{download('context-lab-export.json',await api('export'))}catch(error){showToast(error.message,true)}});
 $('clear-global-form').addEventListener('click',clearGlobalForm);
 $('cancel-global').addEventListener('click',()=>{shell.pendingGlobal=null;$('global-confirm-dialog').close()});
-$('approve-global').addEventListener('click',async()=>{const intent=shell.pendingGlobal;if(!intent)return;try{$('approve-global').disabled=true;await globalGovernancePort.apply(intent);shell.pendingGlobal=null;$('global-confirm-dialog').close();render();renderStanding();clearGlobalForm();$('global-source-form').reset();showToast('Standing rule write completed.')}catch(error){showToast(error.message,true)}finally{$('approve-global').disabled=false}});
+$('approve-global').addEventListener('click',async()=>{const intent=shell.pendingGlobal;if(!intent)return;try{$('approve-global').disabled=true;await globalGovernancePort.apply(intent);shell.pendingGlobal=null;$('global-confirm-dialog').close();const selectedId=shell.selection.kind==='memory'?shell.selection.row.memory.id:null;const next=selectedId?findRow(selectedId):null;shell.selection=next?{kind:'memory',row:next}:{kind:'none'};render();renderStanding();clearGlobalForm();$('global-source-form').reset();showToast(intent.draft?.status==='confirmed'?'Standing rule confirmed.':'Standing rule write completed.')}catch(error){showToast(error.message,true)}finally{$('approve-global').disabled=false}});
 $('preview-button').addEventListener('click',async()=>{try{$('preview-button').disabled=true;const result=await workspacePort.preview(shell.workspace,taskDraft());shell.preview={kind:'ready',result};render();showToast('Context preview ready.')}catch(error){showToast(error.message,true)}finally{$('preview-button').disabled=false}});
 $('scenario').addEventListener('change',()=>{const scenario=shell.scenarios.find(item=>item.id===$('scenario').value);if(!scenario)return;try{const target=workspace(scenario.task.project||shell.workspace.project,scenario.task.ticket||'');if(sameWorkspace(target,shell.workspace)){fillScenario(scenario);return}shell.pendingScenario={scenario,target};$('scenario-target').textContent='Switch to '+target.project+(target.kind==='ticket'?' / '+target.ticket:' / Project defaults')+' before filling this scenario.';$('scenario-dialog').showModal()}catch(error){showToast(error.message,true)}});
 $('cancel-scenario').addEventListener('click',()=>{shell.pendingScenario=null;$('scenario').value='';$('scenario-dialog').close()});

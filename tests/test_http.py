@@ -74,6 +74,7 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("const formId=node=>node.getAttribute('id');", page)
         self.assertIn("formId(event.target)==='global-memory-form'", page)
         self.assertNotIn("event.target.id==='global-memory-form'", page)
+        self.assertIn("current.status==='candidate'&&draft.status!=='retracted'", page)
         cases = self.request("/api/scenarios")["cases"]
         self.assertEqual(len(cases), 28)
         self.assertTrue(all("expected" not in c for c in cases))
