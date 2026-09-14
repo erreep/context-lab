@@ -87,13 +87,31 @@ KNOWLEDGE_SCHEMA = {
         "path": {"type": "string", "description": "Ticket notes folder when mode is import (or auto with a path)."},
         "vault": {
             "type": "string",
-            "description": "Obsidian vault root or any journal folder, or 'none' to decline. Lab-wide for this DB. Optional when auto-detect succeeds on first OS touch.",
+            "description": "Lab-wide Obsidian vault root, or 'none' to decline. Optional when auto-detect succeeds on first OS touch.",
         },
     },
 }
 
 PROSE_KEYS = ("run_id", "context", "estimated_tokens", "needs", "warnings", "dependency_gaps", "picks")
 FULL_KEYS = PROSE_KEYS + ("selected", "trace", "conflicts")
+COMPACT_TITLE_LIMIT = 64
+
+
+def compact_record_title(record, limit=COMPACT_TITLE_LIMIT):
+    """Bounded CompactView label. Documents use heading (or stem); others use title."""
+    if record.get("kind") == "document":
+        text = (record.get("heading") or "").strip()
+        if not text or text == "Overview":
+            path = record.get("path") or ""
+            text = path.rsplit("/", 1)[-1]
+            if text.endswith(".md"):
+                text = text[:-3]
+            text = text or (record.get("title") or "note")
+    else:
+        text = (record.get("title") or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
 
 
 class AgentError(ValueError):
@@ -136,7 +154,7 @@ def format_context(packet, detail="agent"):
     keys = PROSE_KEYS if compact else FULL_KEYS
     out = {k: packet[k] for k in keys if k in packet and k != "picks"}
     # Selected ids/titles only. Never excluded/candidate titles on the agent wire.
-    out["picks"] = [{"id": m["id"], "title": m["title"]} for m in packet.get("selected", [])]
+    out["picks"] = [{"id": m["id"], "title": compact_record_title(m)} for m in packet.get("selected", [])]
     n = 0
     for _ in range(4):
         text = wire_dumps({**out, "wire_estimated_tokens": n})

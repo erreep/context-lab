@@ -26,17 +26,16 @@ def tool(name, description, properties, required, read_only=True):
 
 TOOLS = [
     tool("memory_initiate",
-         "Check or initialize a project/ticket knowledge base. On first OS touch for this DB, Context Lab "
-         "auto-detects an Obsidian vault from the Obsidian app config (and shallow common folders) and binds it, "
-         "notifying via obsidian.auto_detected. If none is found, returns needs_obsidian_vault until knowledge.vault "
-         "is a vault/journal folder path or 'none'. Prefer knowledge={mode, vault?}. mode auto|empty|import|reuse for "
-         "ticket notes. refresh=true rescans ticket notes. Never edits notes.",
+         "Initialize or reuse exact project/ticket notes. knowledge.vault is a lab-wide Obsidian choice. "
+         "mode=import binds an existing ticket folder; auto/empty with a bound vault and a ticket provisions "
+         "Context Lab/{project}/{ticket}. First OS touch auto-detects a vault or returns needs_obsidian_vault. "
+         "obsidian.journaling is ready|vault_only|unavailable. refresh=true rescans notes. Never edits notes.",
          {"project": {"type": "string"}, "ticket": {"type": "string"},
           "knowledge": KNOWLEDGE_SCHEMA,
           "path": {"type": "string"}, "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}},
          ["project"], False),
     tool("memory_allocate_ticket",
-         "Allocate a generated work-unit ticket id (work-YYYYMMDD-HHMMSS UTC) when the user wants Obsidian notes and memories but has no ticket yet.",
+         "Mint a unique ticket id (work-YYYYMMDD-HHMMSS UTC). This does not create a notes folder.",
          {}, []),
     tool("memory_scope",
          "Show the Context Lab binding for the current git branch (project, ticket, database). "
@@ -81,8 +80,9 @@ TOOLS = [
          {"memory_id": {"type": "string"}, "title": {"type": "string"}, "claim": {"type": "string"}},
          ["memory_id"], False),
     tool("memory_journal",
-         "Write durable evidence into the bound ticket folder under journal/<kind>-… and index it immediately as reference text. "
-         "Kinds: plan|decision|progress|handoff. Does not create confirmed lessons. Cl/ remains ephemeral and is skipped by the importer.",
+         "Write and index one plan|decision|progress|handoff note under the ticket folder "
+         "(imported or auto-provisioned). Requires an exact ticket; vault binding alone is not enough. "
+         "Does not create confirmed lessons.",
          {"project": {"type": "string"}, "ticket": {"type": "string"},
           "kind": {"type": "string", "enum": ["plan", "decision", "progress", "handoff"]},
           "title": {"type": "string"}, "body": {"type": "string"}},

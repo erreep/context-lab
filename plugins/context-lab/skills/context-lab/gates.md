@@ -42,4 +42,4 @@ The Git `pre-commit` hook is the enforcement point. It checks the lease. A lease
 Candidates never affect retrieval until confirmed in the local UI (`context-lab serve`).
 Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`; keep them sparse.
 
-Durable ticket evidence goes through `memory_journal` into the bound ticket folder. `Cl/` stays ephemeral and is skipped by the importer.
+Durable ticket evidence goes through `memory_journal` into the ticket notes folder (imported or auto-provisioned under the bound vault).

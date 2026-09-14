@@ -283,7 +283,7 @@ Ticket setup is vault-first and agent-driven. There is no UI initiate/import. Us
 
 ### Initiate once per project/ticket
 
-On first touch, Context Lab tries to auto-detect an Obsidian vault from local Obsidian config (and shallow common folders). If found, it binds the vault and reports `obsidian.auto_detected`. If none is found, `memory_initiate` returns `needs_obsidian_vault` until you pass `knowledge.vault` as a folder path or `"none"`.
+On first touch, Context Lab tries to auto-detect an Obsidian vault from local Obsidian config (and shallow common folders). If found, it binds the vault and may set `obsidian.announce`. If none is found, `memory_initiate` returns `needs_obsidian_vault` until you pass `knowledge.vault` as a folder path or `"none"`. `obsidian.journaling` is `ready`, `vault_only`, or `unavailable`. `mode=auto` or `empty` with a bound vault and a ticket creates `{vault}/Context Lab/{project}/{ticket}/`. An imported ticket folder stays `ready` even when the vault was declined.
 
 Prefer `knowledge={ "mode": "auto" }` (or `import`, `empty`, `reuse`) over ad-hoc flags.
 
@@ -309,7 +309,7 @@ Setup is stored in SQLite under the exact project/ticket pair. Ordinary initiati
 
 ### Importer behavior
 
-Reads UTF-8 `.md`, `.markdown`, and `.txt` without modifying source files. Splits notes at Markdown headings into bounded excerpts, assigns keyword categories from paths and headings, and indexes with the same BM25 retriever. Skips hidden files, symlinks, and unsupported formats. Does not follow links. Session journal folders under `Cl/` are skipped on import. `memory_journal` writes durable plan, decision, progress, and handoff notes under a bound ticket folder and indexes them immediately.
+Reads UTF-8 `.md`, `.markdown`, and `.txt` without modifying source files. Splits notes at Markdown headings into bounded excerpts, assigns keyword categories from paths and headings, and indexes with the same BM25 retriever. Skips hidden files, symlinks, and unsupported formats. Does not follow links. `memory_journal` writes durable plan, decision, progress, and handoff notes under the ticket folder and indexes them immediately.
 
 Limits: 2 MB per note, 20 MB total, 20,000 excerpts per selected folder. Categorization is a local heuristic, not model-based classification.
 
