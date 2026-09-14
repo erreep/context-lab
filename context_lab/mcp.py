@@ -26,15 +26,16 @@ def tool(name, description, properties, required, read_only=True):
 
 TOOLS = [
     tool("memory_initiate",
-         "Check or initialize project/ticket knowledge. Prefer knowledge={mode, vault?}. "
-         "First DB touch may auto-bind an Obsidian vault; otherwise needs_obsidian_vault until vault path or 'none'. "
-         "refresh=true rescans ticket notes. Never edits notes.",
+         "Initialize or reuse exact project/ticket notes. knowledge.vault is a lab-wide Obsidian choice. "
+         "mode=import binds an existing ticket folder; auto/empty with a bound vault and a ticket provisions "
+         "Context Lab/{project}/{ticket}. First OS touch auto-detects a vault or returns needs_obsidian_vault. "
+         "obsidian.journaling is ready|vault_only|unavailable. refresh=true rescans notes. Never edits notes.",
          {"project": {"type": "string"}, "ticket": {"type": "string"},
           "knowledge": KNOWLEDGE_SCHEMA,
           "path": {"type": "string"}, "empty": {"type": "boolean"}, "refresh": {"type": "boolean"}},
          ["project"], False),
     tool("memory_allocate_ticket",
-         "Mint work-YYYYMMDD-HHMMSS when the user wants notes/memories but has no ticket yet.",
+         "Mint work-YYYYMMDD-HHMMSS when the user wants notes/memories but has no ticket yet. Does not create a notes folder.",
          {}, []),
     tool("memory_scope",
          "Show branch binding (project, ticket, db). Fails if unbound or detached HEAD.",
@@ -74,7 +75,9 @@ TOOLS = [
          {"memory_id": {"type": "string"}, "title": {"type": "string"}, "claim": {"type": "string"}},
          ["memory_id"], False),
     tool("memory_journal",
-         "Write durable ticket journal evidence (plan|decision|progress|handoff) and index it. Not a confirmed lesson.",
+         "Write and index one plan|decision|progress|handoff note under the ticket folder "
+         "(imported or auto-provisioned). Requires an exact ticket; vault binding alone is not enough. "
+         "Does not create confirmed lessons.",
          {"project": {"type": "string"}, "ticket": {"type": "string"},
           "kind": {"type": "string", "enum": ["plan", "decision", "progress", "handoff"]},
           "title": {"type": "string"}, "body": {"type": "string"}},

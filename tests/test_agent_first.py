@@ -24,6 +24,7 @@ class AgentFirstTests(unittest.TestCase):
         result = initiate(self.store, "app", "T-1", knowledge={"mode": "auto", "vault": "none"})
         self.assertEqual(result["status"], "initialized")
         self.assertEqual(result["obsidian"]["journaling"], "unavailable")
+        self.assertNotIn("notes", result["obsidian"])
         self.assertEqual(initiate(self.store, "app", "T-1", knowledge={"mode": "auto"})["status"], "already_initialized")
         self.assertEqual(initiate(self.store, "app", "T-1", knowledge={"mode": "reuse"})["status"], "already_initialized")
 

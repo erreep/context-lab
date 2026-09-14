@@ -29,3 +29,7 @@ python3 -m context_lab hook recall-for --purpose commit
 
 Never affect retrieval until confirmed in the local UI (`context-lab serve`). Must-tier (lab-wide, baseline, constraints, standing rules) is one-at-a-time; ticket batch-tier may multi-confirm. Propose durable title+claim linked to real `source_ids`.
 Human surface is the review inbox URL from `context-lab serve`.
+
+## Journal
+
+Durable ticket notes go through `memory_journal` into the ticket folder (imported or auto-provisioned under the bound vault). Vault binding alone is not enough; an exact ticket is required. Journal writes are not confirmed lessons.
