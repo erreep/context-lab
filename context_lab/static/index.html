@@ -110,7 +110,7 @@ body.inbox-mode .review-desk{border-right:0}
   <div class="dialog-head"><h2>Apply this standing rule to every project?</h2></div>
   <p class="confirm-claim" id="global-confirm-claim"></p>
   <p class="hint">This write affects every project and ticket.</p>
-  <div class="actions"><button id="cancel-global">Cancel</button><button class="primary push" id="approve-global">Apply lab-wide</button></div>
+  <div class="actions"><button type="button" id="cancel-global">Cancel</button><button type="button" class="primary push" id="approve-global">Apply lab-wide</button></div>
 </dialog>
 
 <dialog id="benchmark-dialog">
@@ -134,6 +134,7 @@ body.inbox-mode .review-desk{border-right:0}
 <div class="toast" id="toast" role="status" hidden></div>
 <script>
 const $=id=>document.getElementById(id);
+const formId=node=>node.getAttribute('id');
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const strategyNames={targeted:'Targeted context',retrieval:'Retrieval only',lessons:'Retrieval with lessons'};
 let toastTimer;
@@ -598,9 +599,9 @@ document.addEventListener('keydown',async event=>{
 document.addEventListener('submit',async event=>{
   event.preventDefault();
   try{
-    if(event.target.id==='source-form'){const data=new FormData(event.target);await workspacePort.addEvidence(shell.workspace,{title:String(data.get('title')),body:String(data.get('body'))});shell.selection={kind:'none'};render();showToast('Evidence saved.');return}
-    if(event.target.id==='memory-form'){const draft=formMemory(event.target,'candidate');validateCoverage(draft.source_ids,shell.selection.target);await workspacePort.addCandidate(shell.workspace,{id:'M-'+Date.now().toString(36),...draft});shell.selection={kind:'none'};render();showToast('Candidate saved.');return}
-    if(event.target.id==='review-form'){
+    if(formId(event.target)==='source-form'){const data=new FormData(event.target);await workspacePort.addEvidence(shell.workspace,{title:String(data.get('title')),body:String(data.get('body'))});shell.selection={kind:'none'};render();showToast('Evidence saved.');return}
+    if(formId(event.target)==='memory-form'){const draft=formMemory(event.target,'candidate');validateCoverage(draft.source_ids,shell.selection.target);await workspacePort.addCandidate(shell.workspace,{id:'M-'+Date.now().toString(36),...draft});shell.selection={kind:'none'};render();showToast('Candidate saved.');return}
+    if(formId(event.target)==='review-form'){
       const row=shell.selection.row;
       if(!row||row.access!=='edit')return;
       const patch=formMemory(event.target,row.memory.status);
@@ -609,8 +610,8 @@ document.addEventListener('submit',async event=>{
       shell.selection={kind:'memory',row:findRow(row.memory.id)};
       render();showToast('Revision saved.');return;
     }
-    if(event.target.id==='global-source-form'){const data=new FormData(event.target),draft={title:String(data.get('title')).trim(),body:String(data.get('body')).trim()};requestGlobal({kind:'source',draft},draft.body);return}
-    if(event.target.id==='global-memory-form'){
+    if(formId(event.target)==='global-source-form'){const data=new FormData(event.target),draft={title:String(data.get('title')).trim(),body:String(data.get('body')).trim()};requestGlobal({kind:'source',draft},draft.body);return}
+    if(formId(event.target)==='global-memory-form'){
       const version=Number(new FormData(event.target).get('version')||0);
       let draft=memoryDraft(event.target);
       if(version){

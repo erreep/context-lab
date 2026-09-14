@@ -70,6 +70,10 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.boot_pending, expected)
         self.assertIn("Lab rules", page)
         self.assertNotIn("Give the next decision", page)
+        # Named <input name="id"> shadows HTMLFormElement.id; submit dispatch must use getAttribute.
+        self.assertIn("const formId=node=>node.getAttribute('id');", page)
+        self.assertIn("formId(event.target)==='global-memory-form'", page)
+        self.assertNotIn("event.target.id==='global-memory-form'", page)
         cases = self.request("/api/scenarios")["cases"]
         self.assertEqual(len(cases), 28)
         self.assertTrue(all("expected" not in c for c in cases))
