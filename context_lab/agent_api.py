@@ -21,8 +21,13 @@ def _finish_initiate(store, result, *, auto_detected=False):
                 store, result.get("project", ""), result.get("ticket", ""))
         except OSError:
             created = False
-    return knowledge_mod.with_obsidian(
+    out = knowledge_mod.with_obsidian(
         result, store, auto_detected=auto_detected, folder_created=created)
+    # Provision may bind path after empty initiate; echo it so callers need not dig into obsidian.
+    notes = out.get("obsidian", {}).get("notes")
+    if notes and not out.get("path"):
+        out["path"] = notes
+    return out
 
 
 def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, refresh=False):
