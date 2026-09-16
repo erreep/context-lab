@@ -7,7 +7,33 @@ You get two surfaces that share one database:
 - **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
 - **Review inbox (human).** Localhost UI to confirm waiting candidates in the Memories column. **Lab rules** opens lab-wide writes. **Lab → Agent preview** toggles the agent preview column.
 
-The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
+The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone. Distributed under the [MIT License](LICENSE).
+
+## Local threat model
+
+Context Lab is a **same-OS-user, local-first** tool. The intended security boundary is **loopback on your machine** — not HTTP authentication, not branch binding, and not MCP tool annotations. Do not expose `context-lab serve` beyond localhost, and do not treat this as safe for multi-user or remote deployment without real identity and authorization.
+
+| Claim | True? |
+|---|---|
+| `serve` defaults to localhost only | Yes |
+| The workbench authenticates humans | No |
+| Any local process can read or mutate the open database via the workbench | Yes |
+| MCP stdio possession grants broad database and filesystem capabilities | Yes |
+| Branch binding authenticates a human | No |
+| Client `cwd` proves the agent is editing that worktree | No |
+| Bound MCP uses the branch-registry database for that repo | Yes (when `cwd` resolves to a bound worktree) |
+| Bound MCP may only act on the bound project/ticket | Partial — sibling tickets in the same project are blocked; other projects and ID-only tools are not |
+| Imported note folders are an immutable write sandbox | No — journal paths can change after import |
+| Model traffic stays on loopback by default | Yes (`CONTEXT_LAB_LOCAL_ONLY=1`) |
+| Cross-origin redirects can leak `CONTEXT_LAB_API_KEY` when remote models are enabled | Yes if `CONTEXT_LAB_LOCAL_ONLY=0` |
+| Concurrent journals with the same title always keep both bodies | No — last writer wins |
+| Refresh or delete removes old imported text from SQLite | No — immutable source rows remain |
+| JSON export is a complete backup | No — revision and run history live only in SQLite |
+| Client hooks are a security boundary | No — guardrails only (see `GATE_TEXT`) |
+
+**Concurrency:** journal filename choice and knowledge-base index merges are check-then-act; duplicate titles or parallel indexers can lose a body or searchable excerpt until refresh.
+
+**Backup and retention:** stop the server before copying the SQLite database and WAL files. JSON export omits revision and run history; refresh replaces the active knowledge-base document list but keeps prior immutable sources. Exports include full source bodies — treat them as sensitive.
 
 ## Why Context Lab
 
@@ -468,7 +494,7 @@ Feedback diagnoses capture, retrieval, selection/budget, applicability/validity,
 
 ## Project status
 
-This repository can be installed from source through its `pyproject.toml`, but it has no published PyPI release or `LICENSE` file yet. Review the license gap before redistributing or depending on it as a library.
+This repository can be installed from source through its `pyproject.toml` or directly from GitHub (`pipx install git+https://github.com/erreep/context-lab.git`). It is distributed under the [MIT License](LICENSE). There is no published PyPI release yet.
 
 ## Design references
 

@@ -6,7 +6,28 @@ build-backend = "setuptools.build_meta"
 name = "context-lab"
 version = "0.1.0"
 description = "Task-targeted agent memory with worktree-scoped harness hooks"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "Context Lab contributors"}]
 requires-python = ">=3.11"
+keywords = ["agent", "context", "mcp", "memory"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/erreep/context-lab"
+Repository = "https://github.com/erreep/context-lab"
+Issues = "https://github.com/erreep/context-lab/issues"
 
 [project.scripts]
 context-lab = "context_lab.__main__:main"
