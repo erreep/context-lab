@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from .engine import DEFAULT_DB
 from .schemas import AgentError
@@ -96,6 +97,41 @@ class ResolvedScope:
     branch: str
     scope: MemoryScope
     database: Path
+
+
+@dataclass(frozen=True)
+class BoundIdentity:
+    status: Literal["bound"]
+    worktree: Path
+    git_common_dir: Path
+    branch: str
+    scope: MemoryScope
+    database: Path
+
+
+@dataclass(frozen=True)
+class UnboundIdentity:
+    status: Literal["unbound"]
+    worktree: Path
+    git_common_dir: Path
+    branch: str
+
+
+@dataclass(frozen=True)
+class DetachedIdentity:
+    status: Literal["detached"]
+    worktree: Path
+    git_common_dir: Path
+
+
+@dataclass(frozen=True)
+class OutsideIdentity:
+    status: Literal["unavailable"]
+    observed_cwd: Path
+    reason: Literal["not_a_worktree"]
+
+
+SessionIdentity = BoundIdentity | UnboundIdentity | DetachedIdentity | OutsideIdentity
 
 
 class BranchBindingRegistry:
@@ -278,6 +314,77 @@ def scope_status(cwd=None):
     return out
 
 
+def identity_at(cwd: str | Path) -> SessionIdentity:
+    observed = Path(cwd).expanduser().resolve()
+    root_result = _git(["rev-parse", "--show-toplevel"], cwd=observed, check=False)
+    if root_result.returncode != 0:
+        return OutsideIdentity(
+            status="unavailable",
+            observed_cwd=observed,
+            reason="not_a_worktree",
+        )
+    worktree = Path(root_result.stdout.strip()).resolve()
+    common = git_common_dir(observed)
+    branch_result = _git(["symbolic-ref", "-q", "HEAD"], cwd=observed, check=False)
+    branch = branch_result.stdout.strip()
+    if branch_result.returncode != 0 or not branch:
+        return DetachedIdentity(
+            status="detached",
+            worktree=worktree,
+            git_common_dir=common,
+        )
+    registry = BranchBindingRegistry(common)
+    try:
+        binding = registry.get(branch)
+        if binding is None:
+            return UnboundIdentity(
+                status="unbound",
+                worktree=worktree,
+                git_common_dir=common,
+                branch=branch,
+            )
+        return BoundIdentity(
+            status="bound",
+            worktree=worktree,
+            git_common_dir=common,
+            branch=branch,
+            scope=binding.scope,
+            database=registry.database(),
+        )
+    finally:
+        registry.close()
+
+
+def place_token(identity: SessionIdentity) -> str:
+    if isinstance(identity, BoundIdentity):
+        ticket = identity.scope.ticket or "(baseline)"
+        return f"{identity.scope.project}/{ticket}"
+    if isinstance(identity, UnboundIdentity):
+        return f"unbound:{identity.branch}"
+    if isinstance(identity, DetachedIdentity):
+        return "detached"
+    return f"unavailable:{identity.reason}"
+
+
+def switch_token(previous: str, current: str) -> str | None:
+    if previous == current:
+        return None
+
+    def bound_parts(place: str) -> tuple[str, str] | None:
+        if place == "detached" or place.startswith(("unbound:", "unavailable:")):
+            return None
+        project, separator, ticket = place.partition("/")
+        return (project, ticket) if separator and project else None
+
+    old = bound_parts(previous)
+    new = bound_parts(current)
+    if old and new and old[0] == new[0]:
+        return f"ticket {old[1]}→{new[1]}"
+    if old and new:
+        return f"project {old[0]}→{new[0]}"
+    return f"place {previous}→{current}"
+
+
 class BranchScopes:
     @staticmethod
     def _open(cwd=None):
@@ -317,24 +424,30 @@ class BranchScopes:
 
     @classmethod
     def resolve_current(cls, cwd=None) -> ResolvedScope:
-        wt, reg, cwd = cls._open(cwd)
-        try:
-            branch = current_branch_ref(cwd)
-            binding = reg.get(branch)
-            if not binding:
-                raise AgentError(
-                    "unbound_branch",
-                    f"No scope binding for {branch}",
-                    hint=BIND_HINT,
-                )
-            return ResolvedScope(
-                worktree=wt,
-                branch=branch,
-                scope=binding.scope,
-                database=reg.database(),
+        identity = identity_at(cwd or os.getcwd())
+        if isinstance(identity, OutsideIdentity):
+            raise AgentError("not_a_worktree", "Not inside a Git worktree", hint=BIND_HINT)
+        if isinstance(identity, DetachedIdentity):
+            raise AgentError(
+                "detached_head",
+                "Detached HEAD; scope bind requires a branch",
+                hint=BIND_HINT,
             )
-        finally:
-            reg.close()
+        if isinstance(identity, UnboundIdentity):
+            raise AgentError(
+                "unbound_branch",
+                f"No scope binding for {identity.branch}",
+                hint=BIND_HINT,
+            )
+        return ResolvedScope(
+            worktree=GitWorktree(
+                cwd=str(identity.worktree),
+                git_common_dir=str(identity.git_common_dir),
+            ),
+            branch=identity.branch,
+            scope=identity.scope,
+            database=identity.database,
+        )
 
     @classmethod
     def require_request_scope(cls, cwd, requested: MemoryScope) -> ResolvedScope:
