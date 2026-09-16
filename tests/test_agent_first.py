@@ -78,12 +78,12 @@ class AgentFirstTests(unittest.TestCase):
     def test_mcp_propose_schema_and_structured_error(self, _):
         initiate(self.store, "app", "T-1", knowledge={"mode": "empty", "vault": "none"})
         src = self.store.add_source({"project": "app", "ticket": "T-1", "title": "obs", "body": "evidence"})
-        call(self.store, "memory_propose", {"memories": [{
+        call(self.store, "memory_propose", {"cwd": self.temp.name, "memories": [{
             "id": "dup", "project": "app", "ticket": "T-1", "kind": "lesson",
             "title": "a", "claim": "evidence", "source_ids": [src["id"]],
         }]})
         with self.assertRaises(Exception) as ctx:
-            call(self.store, "memory_propose", {"memories": [{
+            call(self.store, "memory_propose", {"cwd": self.temp.name, "memories": [{
                 "id": "dup", "project": "app", "ticket": "T-1", "kind": "lesson",
                 "title": "a", "claim": "evidence", "source_ids": [src["id"]],
             }]})

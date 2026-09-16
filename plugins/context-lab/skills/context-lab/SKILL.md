@@ -9,11 +9,10 @@ MCP tools are the source of truth. Contract text lives in MCP `initialize.instru
 
 ## Daily loop
 
-1. **Scope** — `memory_scope` (or initiate below if unbound).
-2. **Recall** — Soft clients (Cursor: no ambient inject): call `memory_context` after bind and before history-dependent work. Ambient clients (Claude/Codex): standing context is already injected; call `memory_context` when you need a focused query or before commit.
-3. **Work** — use the context packet; read evidence with `memory_source` when a condition matters.
-4. **Record** — `memory_observe` for evidence; `memory_propose` one sharp ticket-scoped candidate per outcome (`title` + `claim` + `source_ids`). Unrelated later-fixes go through `memory_park`, not propose/journal/baseline. Candidates stay inert until the human confirms in the local UI. When `obsidian.journaling` is `ready`, durable plan/decision/progress/handoff notes go through `memory_journal` under the ticket folder.
-5. **Commit** — run `context-lab hook recall-for --purpose commit` before `git commit`.
+1. **Recall** — `memory_context(cwd, task, since=held_place)` after bind and before history-dependent work. Do not poll `memory_scope` first. Ambient clients receive standing context at `SessionStart` only.
+2. **Work** — use the context packet; read evidence with `memory_source` when a condition matters.
+3. **Record** — `memory_observe` for evidence; `memory_propose` one sharp ticket-scoped candidate per outcome (`title` + `claim` + `source_ids`). Unrelated later-fixes go through `memory_park`, not propose/journal/baseline. Candidates stay inert until the human confirms in the local UI. When `obsidian.journaling` is `ready`, durable plan/decision/progress/handoff notes go through `memory_journal` under the ticket folder.
+4. **Commit** — run `context-lab hook recall-for --purpose commit` before `git commit`.
 
 Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`. Keep them sparse.
 

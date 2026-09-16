@@ -1,4 +1,3 @@
-"""Harness hooks: set-scope, inject, session-start."""
 import json
 import os
 import subprocess
@@ -72,7 +71,8 @@ class HookTests(unittest.TestCase):
         self.store.close()
         self.temp.cleanup()
 
-    def test_inject_compactview_and_distinct_runs(self):
+    def test_inject_is_identity_only_and_since_match_is_silent(self):
+        runs_before = self.store.db.execute("SELECT count(*) FROM runs").fetchone()[0]
         first = _run_hook(self.repo, "inject", {
             "session_id": "s1", "cwd": str(self.repo),
             "prompt": "What pigment does AlphaWidget use?",
@@ -81,23 +81,30 @@ class HookTests(unittest.TestCase):
         out1 = json.loads(first.stdout)
         ctx1 = json.loads(out1["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(out1["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
-        self.assertIn("run_id", ctx1)
-        self.assertIn("context", ctx1)
-        self.assertIn("picks", ctx1)
-        self.assertIn("wire_estimated_tokens", ctx1)
+        self.assertEqual(ctx1, {"place": "app/T-1"})
 
         second = _run_hook(self.repo, "inject", {
             "session_id": "s1", "cwd": str(self.repo),
             "prompt": "May BetaWidget share AlphaWidget pigment stock?",
+            "since": "app/T-1",
         })
         self.assertEqual(second.returncode, 0, second.stderr)
-        ctx2 = json.loads(json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"])
-        self.assertNotEqual(ctx1["run_id"], ctx2["run_id"])
-        self.assertNotEqual(ctx1.get("picks"), ctx2.get("picks"))
-        blob1 = json.dumps(ctx1)
-        blob2 = json.dumps(ctx2)
-        self.assertIn("Alpha", blob1)
-        self.assertIn("Beta", blob2)
+        self.assertEqual(second.stdout, "")
+        changed = _run_hook(self.repo, "inject", {
+            "session_id": "s1",
+            "cwd": str(self.repo),
+            "prompt": "Ignored for identity",
+            "since": "app/T-0",
+        })
+        ctx2 = json.loads(
+            json.loads(changed.stdout)["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertEqual(ctx2, {
+            "place": "app/T-1",
+            "switch": "ticket T-0→T-1",
+        })
+        runs_after = self.store.db.execute("SELECT count(*) FROM runs").fetchone()[0]
+        self.assertEqual(runs_after, runs_before)
 
     def test_session_start_injects_standing_context_stub(self):
         result = _run_hook(self.repo, "session-start", {"session_id": "s1", "cwd": str(self.repo)})
@@ -106,11 +113,11 @@ class HookTests(unittest.TestCase):
         self.assertEqual(out["hookEventName"], "SessionStart")
         self.assertIn("standing context", out["additionalContext"])
         self.assertIn("run_id", out["additionalContext"])
+        self.assertIn('"place":"app/T-1"', out["additionalContext"])
         self.assertNotIn("Context Lab hard gates", out["additionalContext"])
         self.assertNotIn("Context Lab contract", out["additionalContext"].split("\n\n", 1)[0])
 
     def test_gate_adapter_reads_command_and_cwd_from_payload(self):
-        # Run from a directory that is not a repo: only the payload can supply cwd and command.
         elsewhere = self.root / "elsewhere"
         elsewhere.mkdir()
         passthrough = _run_hook(elsewhere, "gate-git", {
@@ -130,7 +137,7 @@ class HookTests(unittest.TestCase):
         }, argv=["commit", "--adapter", "cursor"])
         self.assertEqual(json.loads(cursor.stdout)["permission"], "deny")
 
-    def test_missing_scope_silent_stdout(self):
+    def test_unbound_and_unavailable_inject_compact_place(self):
         other = self.root / "other"
         other.mkdir()
         _git(other, "init")
@@ -138,8 +145,28 @@ class HookTests(unittest.TestCase):
             "session_id": "s2", "cwd": str(other), "prompt": "hello",
         })
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout.strip(), "")
-        self.assertIn("scope bind", result.stderr)
+        context = json.loads(
+            json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertTrue(context["place"].startswith("unbound:refs/heads/"))
+        outside = _run_hook(self.root, "inject", {
+            "session_id": "s3",
+            "cwd": str(self.root),
+            "prompt": "hello",
+        })
+        context = json.loads(
+            json.loads(outside.stdout)["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertEqual(context, {"place": "unavailable:not_a_worktree"})
+        ambiguous = _run_hook(self.root, "inject", {
+            "session_id": "s4",
+            "workspace_roots": [str(self.repo), str(other)],
+            "prompt": "hello",
+        })
+        context = json.loads(
+            json.loads(ambiguous.stdout)["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertEqual(context, {"place": "unavailable:ambiguous_workspace_roots"})
 
 
 class HookOptInTests(unittest.TestCase):

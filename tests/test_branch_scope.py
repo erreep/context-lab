@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from context_lab.schemas import AgentError
-from context_lab.scope import BranchScopes, MemoryScope
+from context_lab.scope import ROUTE_ONLY, BranchScopes, MemoryScope, bind_request
 
 
 def _git(cwd, *args, check=True):
@@ -141,6 +141,35 @@ class BranchScopeTests(unittest.TestCase):
         with self.assertRaises(AgentError) as ctx:
             BranchScopes.require_request_scope(str(self.repo), MemoryScope("app", "T-99"))
         self.assertEqual(ctx.exception.code, "scope_mismatch")
+
+    def test_bind_request_bound_truth_table(self):
+        BranchScopes.bind_current(str(self.repo), self.scope_a, database=self.db)
+        filled = bind_request(str(self.repo), None)
+        self.assertEqual(filled.scope, self.scope_a)
+        self.assertEqual(filled.database, Path(self.db).resolve())
+        explicit = bind_request(str(self.repo), self.scope_a)
+        self.assertEqual(explicit.scope, self.scope_a)
+        other = bind_request(str(self.repo), MemoryScope("__global__", ""))
+        self.assertEqual(other.scope, MemoryScope("__global__", ""))
+        self.assertEqual(other.database, Path(self.db).resolve())
+        routed = bind_request(str(self.repo), ROUTE_ONLY)
+        self.assertIsNone(routed.scope)
+        self.assertEqual(routed.database, Path(self.db).resolve())
+        with self.assertRaises(AgentError) as caught:
+            bind_request(str(self.repo), MemoryScope("app", "T-99"))
+        self.assertEqual(caught.exception.code, "scope_mismatch")
+
+    def test_bind_request_unbound_truth_table(self):
+        explicit = bind_request(str(self.repo), MemoryScope("app", "T-9"))
+        self.assertEqual(explicit.scope, MemoryScope("app", "T-9"))
+        self.assertIsNone(explicit.database)
+        routed = bind_request(str(self.repo), ROUTE_ONLY)
+        self.assertIsNone(routed.scope)
+        self.assertIsNone(routed.database)
+        with self.assertRaises(AgentError) as caught:
+            bind_request(str(self.repo), None)
+        self.assertEqual(caught.exception.code, "validation")
+        self.assertEqual(caught.exception.field, "project")
 
     def test_legacy_scope_json_written(self):
         BranchScopes.bind_current(str(self.repo), self.scope_a, database=self.db)

@@ -4,13 +4,10 @@ from __future__ import annotations
 import json
 import math
 
-# Single runtime agent contract. MCP initialize, SessionStart, and soft rules reuse this.
-# Ambient clients (Claude/Codex) already inject standing context — mid-task recall is optional there.
-# Soft clients (Cursor) must call memory_context after scope bind and whenever history matters.
 GATE_TEXT = """# Context Lab contract
 
 1. Commit: run `python3 -m context_lab hook recall-for --purpose commit` before `git commit` (lease = retrieval under bound git state, not comprehension).
-2. Soft clients (Cursor: no ambient inject): call `memory_context` after scope bind and before history-dependent decisions. Ambient clients (Claude/Codex) already inject standing context.
+2. Soft clients: call `memory_context` with client `cwd` + `task` and optional `since` as the last `place`; do not poll `memory_scope` first. Claude/Codex standing inject is SessionStart only.
 3. Candidates never affect retrieval until confirmed in the local UI. Propose one sharp ticket-scoped claim per outcome (`title` + `claim` + `source_ids`).
 4. Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
 
@@ -18,9 +15,7 @@ Setup is not recall. Client hooks are guardrails, not a security boundary.
 """
 
 KINDS = ["fact", "constraint", "decision", "event", "lesson", "standing_rule"]
-# agent/prose = CompactView (default MCP). inspect/full = TraceView keys for workbench.
 DETAIL_LEVELS = frozenset({"agent", "prose", "inspect", "full"})
-# Workbench review desk only — not persisted. High blast-radius memories need one-at-a-time confirm.
 MUST_REVIEW_KINDS = frozenset({"constraint", "standing_rule"})
 
 
@@ -68,8 +63,7 @@ TASK_SCHEMA = {
     "required": ["query", "project"],
 }
 
-# Advertised MCP memory_context shape. Nested {task:{project,query}} is still accepted at runtime.
-FLAT_CONTEXT_EXAMPLE = '{"project":"my-project","task":"what you are about to do"}'
+FLAT_CONTEXT_EXAMPLE = '{"cwd":"/path/to/workspace","task":"what you are about to do"}'
 
 MEMORY_DRAFT_SCHEMA = {
     "type": "object",
@@ -168,6 +162,19 @@ def wire_estimated_tokens(obj_or_text):
     return math.ceil(len(text.encode("utf-8")) / 4)
 
 
+def with_wire_estimated_tokens(obj):
+    out = dict(obj)
+    estimate = 0
+    for _ in range(4):
+        out["wire_estimated_tokens"] = estimate
+        measured = wire_estimated_tokens(out)
+        if measured == estimate:
+            return out
+        estimate = measured
+    out["wire_estimated_tokens"] = estimate
+    return out
+
+
 def format_context(packet, detail="agent"):
     """Project a compile packet for the agent (compact) or inspect (trace) surface.
 
@@ -176,17 +183,8 @@ def format_context(packet, detail="agent"):
     compact = detail in {"agent", "prose"}
     keys = PROSE_KEYS if compact else FULL_KEYS
     out = {k: packet[k] for k in keys if k in packet and k != "picks"}
-    # Selected ids/titles only. Never excluded/candidate titles on the agent wire.
     out["picks"] = [{"id": m["id"], "title": compact_record_title(m)} for m in packet.get("selected", [])]
-    n = 0
-    for _ in range(4):
-        text = wire_dumps({**out, "wire_estimated_tokens": n})
-        n2 = wire_estimated_tokens(text)
-        if n2 == n:
-            out["wire_estimated_tokens"] = n
-            return out, text
-        n = n2
-    out["wire_estimated_tokens"] = n
+    out = with_wire_estimated_tokens(out)
     return out, wire_dumps(out)
 
 
