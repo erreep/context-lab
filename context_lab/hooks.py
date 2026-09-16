@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import agent_api, usage
 from .engine import DEFAULT_DB, ROOT
+from .pinned_root import reject_dangling_dest
 from .schemas import AgentError, wire_dumps, with_wire_estimated_tokens
 from .scope import BoundIdentity, identity_at, place_token, switch_token
 from .store import Store
@@ -485,6 +486,7 @@ def _mcp_payload(client):
 
 
 def _write_file(path: Path, content: str, force: bool):
+    reject_dangling_dest(path)
     if path.exists() and not force:
         raise AgentError(
             "already_exists",
@@ -525,53 +527,18 @@ def _write_codex_mcp(path: Path, force: bool):
     return path
 
 
-def install(client, project=None, ticket=None, db=None, git=True, force=False, cwd=None):
-    """One-shot local opt-in: scope, MCP, client hooks, git lease; Cursor soft-contract rules."""
-    if client not in HARNESS_CONFIGS:
-        raise AgentError("validation", f"unknown client {client!r}", field="client")
-    if project is None and ticket is not None:
-        raise AgentError(
-            "validation",
-            "ticket requires --project; omit both to reuse bound scope",
-            field="ticket",
-        )
-    cwd = require_worktree(cwd)
-    root = Path(cwd)
-
-    if project is not None:
-        scope = set_scope(project, ticket or "", db=db, cwd=cwd)
-    else:
-        scope = load_scope(cwd=cwd)
-
-    written = []
-    mcp_rel = MCP_PATHS[client]
-    mcp_path = root / mcp_rel
-    if client == "codex":
-        written.append(str(_write_codex_mcp(mcp_path, force).relative_to(root)))
-    else:
-        written.append(str(_write_file(mcp_path, _mcp_payload(client), force).relative_to(root)))
-
-    hooks_rel = CONFIG_PATHS[client]
-    hooks_path = root / hooks_rel
-    hooks_body = json.dumps(HARNESS_CONFIGS[client], indent=2) + "\n"
-    written.append(str(_write_file(hooks_path, hooks_body, force).relative_to(root)))
-
-    if client == "cursor":
-        rules_path = root / CURSOR_RULES_PATH
-        written.append(str(_write_file(rules_path, CURSOR_RULES, force).relative_to(root)))
-
-    git_status = "skipped (--no-git)"
-    if git:
-        code = install_git(cwd=cwd)
-        git_status = "installed pre-commit lease gate" if code == 0 else "not installed (existing hook or core.hooksPath; see stderr)"
-
+def _print_install_report(client: str, report) -> None:
+    scope = report.scope or {}
     print(f"Context Lab install ({client})")
-    bound_ticket = scope["ticket"]
+    bound_ticket = scope.get("ticket", "")
     baseline_note = " (project baseline)" if bound_ticket == "" else ""
-    print(f"  scope: project={scope['project']!r} ticket={bound_ticket!r}{baseline_note} branch={scope.get('branch')!r}")
-    print(f"  wrote: {', '.join(written)}")
+    print(
+        f"  scope: project={scope.get('project')!r} ticket={bound_ticket!r}"
+        f"{baseline_note} branch={scope.get('branch')!r}"
+    )
+    print(f"  wrote: {', '.join(report.written)}")
     print(f"  ambient inject: {AMBIENT[client]}")
-    print(f"  hard gate: git commit lease ({git_status})")
+    print(f"  hard gate: git commit lease ({report.git_message})")
     if client == "cursor":
         print(f"  soft contract: {CURSOR_RULES_PATH} (call memory_context; no ambient inject)")
         print("  note: Cursor has no ambient context inject. MCP + rules + git lease only.")
@@ -581,12 +548,38 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     print("  Next: restart / reconnect the client.")
     from .engine import DEFAULT_DB
     from .review import ReviewRoute, print_install_handoff
+
     print_install_handoff(
         scope.get("db") or DEFAULT_DB,
-        ReviewRoute(project=scope["project"], ticket=scope.get("ticket") or ""),
+        ReviewRoute(project=scope.get("project", ""), ticket=bound_ticket),
     )
     if bound_ticket == "":
         print("  Next: rebind with hook set-scope --project P --ticket T when you have a ticket.")
+
+
+def install(client, project=None, ticket=None, db=None, git=True, force=False, cwd=None):
+    """One-shot local opt-in: scope, MCP, client hooks, git lease; Cursor soft-contract rules."""
+    from .worktree_install import WorktreeInstall
+
+    if project is None and ticket is not None:
+        raise AgentError(
+            "validation",
+            "ticket requires --project; omit both to reuse bound scope",
+            field="ticket",
+        )
+    plan = WorktreeInstall.build(
+        client,
+        cwd=Path(cwd or os.getcwd()),
+        project=project,
+        ticket=ticket,
+        db=db,
+        git=git,
+        force=force,
+    )
+    report = plan.run()
+    _print_install_report(client, report)
+    if report.git_requested and not report.git_installed:
+        return 1
     return 0
 
 
