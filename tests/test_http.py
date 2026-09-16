@@ -56,12 +56,32 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("Context Lab", page)
         self.assertNotIn('<option value="__global__"', page)
         self.assertIn('id="layer-stack"', page)
-        self.assertIn("To review", page)
-        self.assertIn("Nothing waiting.", page)
+        self.assertIn("Memories", page)
+        self.assertNotIn("To review", page)
+        self.assertIn("Nothing to confirm.", page)
         self.assertIn('id="pending-badge"', page)
         self.assertIn('id="later-badge"', page)
+        self.assertIn("data-later-ticket", page)
+        self.assertIn("Remove this from Later?", page)
+        self.assertNotIn("prompt(", page)
+        self.assertIn('id="create-dialog"', page)
+        self.assertIn("function openCreateDialog(", page)
+        self.assertNotIn("create-allocate", page)
+        self.assertNotIn("api('allocate-ticket'", page)
+        self.assertIn("$('new-ticket').disabled=!current", page)
+        self.assertIn("parseProject(name)", page)
+        self.assertIn("parseTicket(name)", page)
         self.assertIn("inbox-mode", page)
-        self.assertIn("Lab tools", page)
+        self.assertIn("Agent preview", page)
+        self.assertNotIn("Lab tools", page)
+        self.assertIn(">Lab rules<", page)
+        self.assertIn('placeholder="Filter"', page)
+        self.assertNotIn("Filter to confirm", page)
+        self.assertNotIn("One by one", page)
+        self.assertNotIn("Batch OK", page)
+        self.assertIn("evidence-drop", page)
+        self.assertIn('id="global-evidence"', page)
+        self.assertIn("renderGlobalEvidence(memory.source_ids", page)
         store = Store(self.db_path)
         try:
             waiting = sum(1 for m in store.memories() if m.get("status") == "candidate")
@@ -69,13 +89,32 @@ class HTTPTests(unittest.TestCase):
             store.close()
         expected = "Nothing waiting to confirm" if waiting == 0 else f"{waiting} waiting to confirm"
         self.assertEqual(self.boot_pending, expected)
-        self.assertIn("Lab rules", page)
+        self.assertIn('aria-label="Workspace"', page)
+        self.assertIn('aria-label="Work item"', page)
+        self.assertIn("This workspace", page)
+        self.assertIn("New workspace", page)
+        self.assertIn("New work item", page)
+        self.assertIn("?'Workspace':'Work item'", page)
+        self.assertNotIn("Project defaults", page)
         self.assertNotIn("Give the next decision", page)
         # Named <input name="id"> shadows HTMLFormElement.id; submit dispatch must use getAttribute.
         self.assertIn("const formId=node=>node.getAttribute('id');", page)
         self.assertIn("formId(event.target)==='global-memory-form'", page)
         self.assertNotIn("event.target.id==='global-memory-form'", page)
-        self.assertIn("current.status==='candidate'&&draft.status!=='retracted'", page)
+        self.assertIn("review_ack", page)
+        self.assertIn("canConfirmReview", page)
+        self.assertIn("review-card--must", page)
+        self.assertNotIn("One by one", page)
+        self.assertNotIn("Batch OK", page)
+        global_form_start = page.index('id="global-memory-form"')
+        global_form_end = page.index("</form>", global_form_start)
+        global_form = page[global_form_start:global_form_end]
+        self.assertNotIn("<option>confirmed</option>", global_form)
+        self.assertNotIn('name="status"', global_form)
+        self.assertIn("function similarWaitingRows(", page)
+        self.assertIn("similar-waiting", page)
+        self.assertIn("data-memory-id", page)
+        self.assertNotIn("similar_waiting", page)
         cases = self.request("/api/scenarios")["cases"]
         self.assertEqual(len(cases), 28)
         self.assertTrue(all("expected" not in c for c in cases))
@@ -95,6 +134,119 @@ class HTTPTests(unittest.TestCase):
         history = self.request("/api/revisions/http-rule")["revisions"]
         self.assertEqual([m["status"] for m in history], ["candidate", "confirmed"])
         self.assertEqual(self.request("/api/source/" + source["id"])["body"], source["body"])
+
+    def test_info_memories_include_review_tier(self):
+        source = self.request("/api/source", {
+            "project": "fieldnote", "ticket": "T-tier",
+            "title": "Tier harness observation", "body": "Constraint body for tier test.",
+        })
+        constraint = {
+            "id": "tier-must-constraint", "project": "fieldnote", "ticket": "T-tier",
+            "kind": "constraint", "title": "Must-tier constraint",
+            "claim": source["body"], "source_ids": [source["id"]],
+            "status": "candidate", "valid_from": "2026-01-01",
+        }
+        fact = {
+            "id": "tier-batch-fact", "project": "fieldnote", "ticket": "T-tier",
+            "kind": "fact", "title": "Batch-tier fact",
+            "claim": "Ticket-scoped fact for batch tier.", "source_ids": [source["id"]],
+            "status": "candidate", "valid_from": "2026-01-01",
+        }
+        self.request("/api/memories", {"memories": [constraint, fact]})
+        info = self.request("/api/info?project=fieldnote&ticket=T-tier")
+        tiers = {m["id"]: m["review_tier"] for m in info["memories"]}
+        self.assertEqual(tiers["tier-must-constraint"], "must")
+        self.assertEqual(tiers["tier-batch-fact"], "batch")
+        inherited_tiers = {m["id"]: m.get("review_tier") for m in info["inherited_memories"]}
+        for memory_id, tier in inherited_tiers.items():
+            self.assertIn(tier, ("must", "batch"), memory_id)
+        self.request("/api/memories", {"memories": [
+            dict(constraint, expected_version=1, status="retracted"),
+            dict(fact, expected_version=1, status="retracted"),
+        ]})
+
+    def test_b1_inbox_excludes_lab_governance(self):
+        """B1: lab-wide candidates must not appear in the inbox layer stack.
+
+        Baseline (pre-B1): renderLayers mapped all workbench.layers including lab;
+        desk redirected lab rows to Standing rules dialog (duplicate surface).
+
+        Target: inboxLayers() omits kind==='lab'; dialog remains sole lab confirm path.
+        """
+        page = self.request("/")
+        self.assertIn("function inboxLayers()", page)
+        self.assertIn("layer.kind!=='lab'", page)
+        source = self.request("/api/source", {
+            "project": "__global__", "ticket": "", "confirm_global": True,
+            "title": "Lab harness observation", "body": "Use .venv only for this project.",
+        })
+        candidate = {
+            "id": "b1-harness-lab", "project": "__global__", "ticket": "",
+            "kind": "standing_rule", "title": "Harness lab rule",
+            "claim": source["body"], "source_ids": [source["id"]],
+            "status": "candidate", "confirm_global": True, "valid_from": "2026-01-01",
+        }
+        self.request("/api/memories", {"memories": [candidate]})
+        info = self.request("/api/info?project=fieldnote")
+        inherited = [m for m in info["inherited_memories"]
+                     if m.get("project") == "__global__" and m.get("status") == "candidate"]
+        self.assertEqual(len(inherited), 1)
+        self.assertEqual(inherited[0]["id"], "b1-harness-lab")
+        confirmed = dict(candidate, expected_version=1, status="confirmed", confirm_global=True)
+        self.request("/api/memories", {"memories": [confirmed]})
+        history = self.request("/api/revisions/b1-harness-lab")["revisions"]
+        self.assertEqual([m["status"] for m in history], ["candidate", "confirmed"])
+        self.request("/api/memories", {"memories": [dict(confirmed, expected_version=2, status="retracted", confirm_global=True)]})
+        self.assertIn("inboxLayers().map(layer=>", page)
+        self.assertNotIn("shell.workbench.layers.map(layer=>", page)
+        self.assertNotIn("data-standing>Add standing rule", page)
+
+    def test_b3_create_dialog_replaces_prompt(self):
+        """B3: header create flows use dialog + validation, not window.prompt."""
+        page = self.request("/")
+        self.assertNotIn("prompt(", page)
+        self.assertIn('id="create-form"', page)
+        self.assertIn("Choose a real workspace.", page)
+        self.assertIn("Work item name is required.", page)
+        self.assertIn("openCreateDialog('project')", page)
+        self.assertIn("openCreateDialog('ticket'", page)
+        self.assertIn("formId(event.target)==='create-form'", page)
+
+    def test_b4_lab_tools_toggle_contract(self):
+        """B4: Lab tools toggles agent preview only; layer stack stays visible in inbox-mode."""
+        page = self.request("/")
+        self.assertIn("body.inbox-mode .agent-preview{display:none}", page)
+        self.assertNotRegex(page, r"body\.inbox-mode\s+\.layer-stack\{display:none\}")
+        self.assertIn("document.body.classList.toggle('lab-mode',lab)", page)
+        self.assertIn("document.body.classList.toggle('inbox-mode',!lab)", page)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Lab → Agent preview** toggles the agent preview column only", readme)
+        self.assertIn("**Lab rules** button", readme)
+        self.assertNotIn("Available under Lab tools", readme)
+        self.assertNotIn("stay under Lab tools", readme)
+        self.assertNotIn("first layer of the workspace", readme)
+        self.assertNotIn("Lab tools still expose the layer stack", readme)
+        self.assertNotIn("Lab → Standing rules", readme)
+
+    def test_b5_empty_inbox_single_surface(self):
+        """B5: zero candidates render one empty card, not card plus empty layer sections.
+
+        Baseline: renderLayers mapped inboxLayers first, then prepended empty-inbox
+        over still-rendered sections (0 to confirm Workspace bands under the hero).
+
+        Target: empty candidate set returns after the hero card; layer map runs only
+        when candidateRows() is non-empty.
+        """
+        page = self.request("/")
+        start = page.index("function renderLayers(){")
+        end = page.index("function renderBand(", start)
+        body = page[start:end]
+        self.assertIn("if(!candidateRows().length){", body)
+        self.assertIn("return;", body)
+        self.assertNotIn("+$('layers').innerHTML", body)
+        empty_idx = body.index("if(!candidateRows().length){")
+        map_idx = body.index("inboxLayers().map(layer=>")
+        self.assertLess(empty_idx, map_idx)
 
     def test_bad_inputs_and_cross_origin(self):
         with self.assertRaises(urllib.error.HTTPError) as result:

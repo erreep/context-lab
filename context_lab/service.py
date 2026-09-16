@@ -5,7 +5,18 @@ from .engine import DATA_ROOT, STRATEGIES, catalog, compile_context, plan_task
 from .evaluate import evaluate
 from .provider import ModelEndpoint
 from .knowledge import allocate_ticket, initiate
+from .schemas import review_tier
 from .store import GLOBAL_PROJECT, scope_key, scope_layers
+
+
+def memory_wire(memory: dict) -> dict:
+    row = dict(memory)
+    row["review_tier"] = review_tier(memory)
+    return row
+
+
+def _wire_memories(rows: list[dict]) -> list[dict]:
+    return [memory_wire(m) for m in rows]
 
 
 def provider_flags(store, options=None):
@@ -98,7 +109,7 @@ def info(store, project=None, ticket=None):
     if project is not None:
         key = scope_key({"project": project, "ticket": ticket if ticket is not None else ""})
         project, ticket = key
-        payload["memories"] = store.memories(project=project, ticket=ticket)
+        payload["memories"] = _wire_memories(store.memories(project=project, ticket=ticket))
         payload["sources"] = store.sources(project=project, ticket=ticket)
         inherited_m, inherited_s = [], []
         for layer_project, layer_ticket in scope_layers({"project": project, "ticket": ticket}):
@@ -106,7 +117,7 @@ def info(store, project=None, ticket=None):
                 continue
             inherited_m.extend(store.memories(project=layer_project, ticket=layer_ticket))
             inherited_s.extend(store.sources(project=layer_project, ticket=layer_ticket))
-        payload["inherited_memories"] = inherited_m
+        payload["inherited_memories"] = _wire_memories(inherited_m)
         payload["inherited_sources"] = inherited_s
         payload["knowledge_bases"] = [b for b in bases if scope_key(b) == key]
         payload["feedback"] = [f for f in payload["feedback"]
@@ -116,7 +127,7 @@ def info(store, project=None, ticket=None):
         lot = ParkingLot(store)
         payload["later"] = {"count": lot.count(project), "items": lot.list(project=project, state="parked")}
     else:
-        payload["memories"] = store.memories()
+        payload["memories"] = _wire_memories(store.memories())
         payload["sources"] = store.sources()
         payload["inherited_memories"] = []
         payload["inherited_sources"] = []

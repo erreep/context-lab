@@ -5,7 +5,7 @@ Context Lab is a local memory lab for testing when a memory should affect an age
 You get two surfaces that share one database:
 
 - **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
-- **Review inbox (human).** Localhost UI to confirm waiting candidates; Lab tools for browse and preview.
+- **Review inbox (human).** Localhost UI to confirm waiting candidates in the Memories column. **Lab rules** opens lab-wide writes. **Lab → Agent preview** toggles the agent preview column.
 
 The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone.
 
@@ -193,19 +193,21 @@ The server implements a minimal newline-delimited stdio JSON-RPC tool subset bas
 
 ## Human UI
 
-The browser opens as a review inbox for the current project and ticket. Lab tools still expose the layer stack and agent preview. Lab-wide standing rules appear as the first layer of the workspace, not as a separate project.
+The browser opens as a review inbox for the current workspace and work item. The header uses **Workspace** and **Work item**; MCP and CLI still use `--project` and `--ticket`.
+
+The **Memories** column lists waiting, confirmed, and retracted items for the selected workspace. **Lab → Agent preview** toggles the agent preview column only. Lab-wide rules live under the **Lab rules** button, not in the inbox column.
 
 ### Layer stack
 
-Browse records across scopes: sparse lab-wide (`project=__global__`), project baseline (empty ticket), and exact ticket. Filter the combined stack. Sibling tickets never mix. Available under Lab tools.
+Browse waiting and settled items in the Memories column. The stack shows Workspace and Work item layers for the current selection. Sibling work items never mix. Use **Filter** above the stack to narrow the list.
 
 ### Review inbox
 
-Confirm waiting items in the localhost UI. That is the default human surface. Layer stack browse and agent preview stay under Lab tools.
+Confirm waiting items on the review desk. That is the default human surface. Open **Lab → Agent preview** when you need agent preview, task JSON fields, or compare methods.
 
-The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
+The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Evidence opens in place on the card. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
 
-Candidates sort by blast radius. **One by one** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch OK** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
+Keyboard: `j`/`k` move, `a` confirm, `x` retract. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
 
 ### Later (parking lot)
 
@@ -213,11 +215,11 @@ While bound to a ticket, agents can park unrelated fixes with `memory_park` (pro
 
 ### Agent preview
 
-Choose project, ticket, and task features, then preview the context packet an agent would receive. Compare methods shows the three evaluation arms side by side for debugging. It is not the primary agent path.
+Hidden until you open **Lab → Agent preview**. Choose workspace, work item, and task features, then preview the context packet an agent would receive. Compare methods shows the three evaluation arms side by side for debugging. It is not the primary agent path.
 
 ### Lab menu
 
-Standing-rule writes (lab-wide requires explicit user approval), the bundled benchmark runner, and export. Use a separate agent conversation per ticket to avoid carrying old chat context.
+**Lab rules** is the sole surface for lab-wide candidates and writes (lab-wide requires explicit user approval). The **Lab** menu holds Agent preview, the bundled benchmark runner, and export. Use a separate agent conversation per work item to avoid carrying old chat context.
 
 ## Memory model
 
