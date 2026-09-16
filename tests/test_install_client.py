@@ -141,6 +141,39 @@ class InstallClientTests(unittest.TestCase):
         self.assertTrue(pre.is_file())
         self.assertIn("lease", stdout.lower())
 
+    def test_dangling_dest_symlink_untouched(self):
+        self.temp, self.repo = _repo()
+        cursor_dir = self.repo / ".cursor"
+        cursor_dir.mkdir()
+        dangling = cursor_dir / "mcp.json"
+        dangling.symlink_to(self.repo / "missing-target.json")
+        self.assertTrue(dangling.is_symlink())
+        self.assertFalse(dangling.exists())
+        with self.assertRaises(AgentError) as ctx:
+            install("cursor", project="app", ticket="T-1", git=False, cwd=str(self.repo))
+        self.assertEqual(ctx.exception.code, "symlink_escape")
+        self.assertTrue(dangling.is_symlink())
+        self.assertFalse(dangling.exists())
+        self.assertFalse((self.repo / CONFIG_PATHS["cursor"]).exists())
+        self.assertFalse((self.repo / ".cursor" / "rules" / "context-lab-memory.mdc").exists())
+        with self.assertRaises(AgentError):
+            BranchScopes.resolve_current(str(self.repo))
+
+    def test_install_exits_one_when_git_gate_missing(self):
+        self.temp, self.repo = _repo()
+        hooks = self.repo / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        pre = hooks / "pre-commit"
+        pre.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = install("cursor", project="app", ticket="T-1", git=True, cwd=str(self.repo))
+        self.assertEqual(code, 1)
+        self.assertTrue((self.repo / ".cursor" / "mcp.json").is_file())
+        self.assertTrue((self.repo / CONFIG_PATHS["cursor"]).is_file())
+        self.assertEqual(pre.read_text(encoding="utf-8"), "#!/bin/sh\nexit 0\n")
+        self.assertIn("not installed", err.getvalue().lower() + out.getvalue().lower())
+
 
 class InstallGlobalTests(unittest.TestCase):
     def setUp(self):

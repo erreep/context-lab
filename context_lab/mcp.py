@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import agent_api, usage
+from .admission import (
+    Admission,
+    ContextEnvelope,
+    admit_mcp,
+)
 from .schemas import (
     FLAT_CONTEXT_EXAMPLE,
     GATE_TEXT,
@@ -19,21 +24,14 @@ from .schemas import (
     wire_dumps,
 )
 from .scope import (
-    ROUTE_ONLY,
-    BoundIdentity,
-    BoundRequest,
     MemoryScope,
     SessionIdentity,
-    _bind_identity,
-    bind_request,
-    identity_at,
     identity_to_inspect,
     place_token,
     switch_token,
 )
 from .store import Store
 
-_TASK_FIELDS = ("project", "ticket", "actions", "needs", "state", "as_of")
 _CWD = {
     "cwd": {
         "type": "string",
@@ -221,28 +219,6 @@ TOOLS = [
     ),
 ]
 
-STATELESS = {"memory_catalog", "memory_allocate_ticket"}
-SCOPE_DIAGNOSTIC = {"memory_scope"}
-SCOPE_BEARING = {
-    "memory_initiate",
-    "memory_context",
-    "memory_source",
-    "memory_observe",
-    "memory_propose",
-    "memory_journal",
-    "memory_park",
-}
-ID_ADDRESSED = {"memory_inspect_run", "memory_feedback", "memory_promote"}
-
-
-@dataclass(frozen=True)
-class ContextEnvelope:
-    task: dict
-    requested: MemoryScope | None
-    budget: int
-    detail: str
-    since: str | None
-
 
 @dataclass
 class ActiveRequest:
@@ -253,77 +229,26 @@ class ActiveRequest:
     store: Store
     owns_store: bool
     context: ContextEnvelope | None = None
+    admission: Admission | None = None
+
+    @classmethod
+    def from_admission(cls, admission: Admission) -> ActiveRequest:
+        return cls(
+            name=admission.tool or "",
+            args=admission.normalized_args or {},
+            identity=admission.identity,
+            scope=admission.scope,
+            store=admission.store,
+            owns_store=admission.owns_store,
+            context=admission.context,
+            admission=admission,
+        )
 
     def close(self):
-        if self.owns_store:
+        if self.admission is not None:
+            self.admission.close()
+        elif self.owns_store:
             self.store.close()
-
-
-def _task_error(message, field="task"):
-    return AgentError("validation", message, field=field, hint=FLAT_CONTEXT_EXAMPLE)
-
-
-def _scope_from_record(record: dict) -> MemoryScope | None:
-    if "project" not in record:
-        if "ticket" in record:
-            raise AgentError("validation", "ticket requires project", field="project")
-        return None
-    project = record.get("project")
-    ticket = record.get("ticket", "")
-    if not isinstance(project, str) or not project.strip():
-        raise AgentError("validation", "project required", field="project")
-    if not isinstance(ticket, str):
-        raise AgentError("validation", "ticket must be a string", field="ticket")
-    return MemoryScope(project.strip(), ticket.strip())
-
-
-def _fill_scope(record: dict, scope: MemoryScope) -> dict:
-    out = dict(record)
-    out.setdefault("project", scope.project)
-    out.setdefault("ticket", scope.ticket)
-    return out
-
-
-def _parse_context_envelope(args: dict) -> ContextEnvelope:
-    task_val = args.get("task")
-    budget = args.get("budget", 1200)
-    detail = args.get("detail", "agent")
-    since = args.get("since")
-    if since is not None and not isinstance(since, str):
-        raise AgentError("validation", "since must be a string", field="since")
-    if isinstance(task_val, dict):
-        mixed = [key for key in _TASK_FIELDS + ("query",) if key in args]
-        if mixed:
-            raise _task_error(
-                "Do not mix a nested task object with top-level " + ", ".join(mixed),
-            )
-        task = dict(task_val)
-    else:
-        query = None
-        if isinstance(task_val, str) and task_val.strip():
-            query = task_val.strip()
-        elif task_val is not None:
-            raise _task_error("task must be a string or a nested task object")
-        alias = args.get("query")
-        if isinstance(alias, str) and alias.strip():
-            alias = alias.strip()
-            if query is not None and alias != query:
-                raise _task_error("task and query disagree", field="query")
-            query = query or alias
-        elif alias is not None and alias != "":
-            raise _task_error("query must be a string", field="query")
-        if not query:
-            raise _task_error("Pass task (what you are about to do)")
-        task = {key: args[key] for key in _TASK_FIELDS if key in args}
-        task["query"] = query
-    requested = _scope_from_record(task)
-    return ContextEnvelope(
-        task=task,
-        requested=requested,
-        budget=budget,
-        detail=detail,
-        since=since,
-    )
 
 
 def _context_value_error(exc):
@@ -338,104 +263,14 @@ def _context_value_error(exc):
     return AgentError("validation", message, field=field, hint=FLAT_CONTEXT_EXAMPLE)
 
 
-def _require_cwd(args: dict) -> str:
-    cwd = args.get("cwd")
-    if not isinstance(cwd, str) or not cwd.strip():
-        raise AgentError("validation", "cwd required", field="cwd")
-    return cwd
-
-
-def _select_store(bootstrap: Store, bound: BoundRequest) -> tuple[Store, bool]:
-    if bound.database is None:
-        return bootstrap, False
-    database = bound.database.expanduser().resolve()
-    if bootstrap.path != ":memory:" and Path(bootstrap.path).expanduser().resolve() == database:
-        return bootstrap, False
-    return Store(str(database)), True
-
-
 @contextmanager
 def open_request(bootstrap: Store, name: str, args: dict):
-    if not isinstance(args, dict):
-        raise AgentError("validation", "arguments must be an object")
-    if name in STATELESS:
-        yield ActiveRequest(name, dict(args), None, None, bootstrap, False)
-        return
-    cwd = _require_cwd(args)
-    if name in SCOPE_DIAGNOSTIC:
-        yield ActiveRequest(name, dict(args), identity_at(cwd), None, bootstrap, False)
-        return
-    context = None
-    normalized = dict(args)
-    if name == "memory_context":
-        context = _parse_context_envelope(args)
-        bound = bind_request(cwd, context.requested)
-        context = ContextEnvelope(
-            task=_fill_scope(context.task, bound.scope),
-            requested=context.requested,
-            budget=context.budget,
-            detail=context.detail,
-            since=context.since,
-        )
-        normalized = {
-            **{key: value for key, value in args.items() if key not in _TASK_FIELDS + ("query", "task")},
-            "task": context.task,
-        }
-    elif name == "memory_propose":
-        memories = args.get("memories")
-        if not isinstance(memories, list) or not memories:
-            raise AgentError("validation", "memories must be a nonempty array", field="memories")
-        identity = identity_at(cwd)
-        filled = []
-        scopes = []
-        for draft in memories:
-            if not isinstance(draft, dict):
-                raise AgentError("validation", "each memory must be an object", field="memories")
-            item_bound = _bind_identity(identity, _scope_from_record(draft))
-            filled.append(_fill_scope(draft, item_bound.scope))
-            scopes.append(item_bound.scope)
-        bound = BoundRequest(
-            identity=identity,
-            scope=scopes[0] if len(set(scopes)) == 1 else None,
-            database=identity.database if isinstance(identity, BoundIdentity) else None,
-        )
-        normalized["memories"] = filled
-    elif name in ID_ADDRESSED:
-        bound = bind_request(cwd, ROUTE_ONLY)
-    elif name == "memory_park":
-        identity = identity_at(cwd)
-        requested = _scope_from_record(args)
-        bound = _bind_identity(
-            identity,
-            None if isinstance(identity, BoundIdentity) else requested,
-        )
-        normalized = _fill_scope(args, bound.scope)
-        if requested is not None and requested.project != bound.scope.project:
-            raise AgentError(
-                "scope_mismatch",
-                f"Parking project {requested.project} does not match binding "
-                f"{bound.scope.project} on {bound.identity.branch}",
-                field="project",
-            )
-    elif name in SCOPE_BEARING:
-        bound = bind_request(cwd, _scope_from_record(args))
-        normalized = _fill_scope(args, bound.scope)
-    else:
-        raise AgentError("unknown_tool", f"Unknown tool: {name}")
-    store, owns_store = _select_store(bootstrap, bound)
-    request = ActiveRequest(
-        name=name,
-        args=normalized,
-        identity=bound.identity,
-        scope=bound.scope,
-        store=store,
-        owns_store=owns_store,
-        context=context,
-    )
-    try:
-        yield request
-    finally:
-        request.close()
+    with admit_mcp(bootstrap, name, args) as admission:
+        request = ActiveRequest.from_admission(admission)
+        try:
+            yield request
+        finally:
+            request.close()
 
 
 def _attach_compact_identity(view: dict, identity: SessionIdentity, since: str | None) -> dict:
@@ -468,6 +303,7 @@ def _memory_scope(request: ActiveRequest) -> dict:
 
 def _dispatch(request: ActiveRequest) -> dict:
     args = {key: value for key, value in request.args.items() if key != "cwd"}
+    admission = request.admission
     if request.name == "memory_initiate":
         return agent_api.initiate(request.store, **args)
     if request.name == "memory_allocate_ticket":
@@ -488,6 +324,8 @@ def _dispatch(request: ActiveRequest) -> dict:
             raise _context_value_error(exc) from exc
         return _attach_compact_identity(view, request.identity, request.context.since)
     if request.name == "memory_inspect_run":
+        record = admission.load_run(args["run_id"])
+        admission.with_derived_scope(record["task"])
         return agent_api.inspect_run(request.store, args["run_id"])
     if request.name == "memory_source":
         return agent_api.source(
@@ -501,6 +339,8 @@ def _dispatch(request: ActiveRequest) -> dict:
     if request.name == "memory_propose":
         return agent_api.propose(request.store, args["memories"])
     if request.name == "memory_feedback":
+        record = admission.load_run(args["run_id"])
+        admission.with_derived_scope(record["task"])
         return agent_api.feedback(
             request.store,
             args["run_id"],
@@ -509,6 +349,8 @@ def _dispatch(request: ActiveRequest) -> dict:
             args.get("note", ""),
         )
     if request.name == "memory_promote":
+        record = admission.load_memory(args["memory_id"])
+        admission.with_derived_scope(record)
         return agent_api.promote(
             request.store,
             args["memory_id"],

@@ -111,15 +111,14 @@ class RecallWireTests(unittest.TestCase):
         self.assertEqual(view["place"], "app/T-1")
         self.assertEqual(view["switch"], "ticket T-0→T-1")
 
-    def test_cross_project_request_keeps_scope_and_uses_bound_database(self):
-        view = call(self.store, "memory_context", {
-            "cwd": str(self.repo),
-            "project": "fieldnote",
-            "task": "Change button color",
-        })
-        self.assertIn("C-brand", view["context"])
-        self.assertEqual(view["place"], "app/T-1")
-        self.assertIsNotNone(self.bound_store.run(view["run_id"]))
+    def test_cross_project_request_is_scope_mismatch(self):
+        with self.assertRaises(AgentError) as caught:
+            call(self.store, "memory_context", {
+                "cwd": str(self.repo),
+                "project": "fieldnote",
+                "task": "Change button color",
+            })
+        self.assertEqual(caught.exception.code, "scope_mismatch")
 
     def test_same_project_wrong_ticket_is_scope_mismatch(self):
         with self.assertRaises(AgentError) as caught:
@@ -141,16 +140,17 @@ class RecallWireTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "validation")
         self.assertEqual(caught.exception.field, "project")
 
-    def test_nested_task_still_works(self):
-        view = call(self.store, "memory_context", {
-            "cwd": str(self.repo),
-            "task": {
-                "project": "fieldnote",
-                "query": "Change button color",
-                "as_of": "2026-09-12",
-            },
-        })
-        self.assertIn("C-brand", view["context"])
+    def test_nested_task_cross_project_is_scope_mismatch(self):
+        with self.assertRaises(AgentError) as caught:
+            call(self.store, "memory_context", {
+                "cwd": str(self.repo),
+                "task": {
+                    "project": "fieldnote",
+                    "query": "Change button color",
+                    "as_of": "2026-09-12",
+                },
+            })
+        self.assertEqual(caught.exception.code, "scope_mismatch")
 
     def test_mixed_flat_and_nested_rejected(self):
         with self.assertRaises(AgentError) as caught:
