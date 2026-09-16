@@ -100,10 +100,10 @@ context-lab install --client codex --project my-project --ticket PROJ-123
 
 That binds scope, writes MCP config, writes client hooks, and installs the git commit lease. Use `--client claude` or `--client cursor` for those hosts. To bind the project baseline without a ticket, omit `--ticket` or pass `--ticket ""`. Rebind later with `context-lab hook set-scope --project P --ticket T`.
 
-| Client | Ambient CompactView inject | What install writes |
+| Client | Ambient context | What install writes |
 |---|---|---|
-| `claude` | Yes (`SessionStart` + `UserPromptSubmit`) | `.mcp.json`, `.claude/settings.json`, git lease |
-| `codex` | Yes (needs `[features] codex_hooks = true`) | `.codex/config.toml`, `.codex/hooks.json`, git lease |
+| `claude` | `SessionStart` standing CompactView; `UserPromptSubmit` identity only | `.mcp.json`, `.claude/settings.json`, git lease |
+| `codex` | `SessionStart` standing CompactView; `UserPromptSubmit` identity only (needs `[features] codex_hooks = true`) | `.codex/config.toml`, `.codex/hooks.json`, git lease |
 | `cursor` | **No** — Cursor has no prompt injection | `.cursor/mcp.json`, `.cursor/hooks.json` (git gate only), `.cursor/rules/context-lab-memory.mdc`, git lease |
 
 Scope alone never enables hooks. `install` is what enables them. Advanced/manual path: `hook set-scope`, `hook install-git`, and `hook print-config` still work. This repository does not ship active client hook files.
@@ -116,7 +116,7 @@ context-lab install --global --client codex    # ~/.codex/config.toml
 context-lab install --global --client cursor   # ~/.cursor/mcp.json (+ soft-contract rules)
 ```
 
-`--global` only wires MCP (and Cursor’s soft-contract rules). Ambient CompactView and the commit lease still require a per-repo `install --client … --project … --ticket …`.
+`--global` only wires MCP (and Cursor’s soft-contract rules). The `SessionStart` CompactView, prompt identity signal, and commit lease still require a per-repo `install --client … --project … --ticket …`.
 
 
 ### Agent contract
@@ -124,7 +124,7 @@ context-lab install --global --client cursor   # ~/.cursor/mcp.json (+ soft-cont
 Runtime source: MCP `initialize.instructions` (`GATE_TEXT`).
 
 1. Before `git commit`, run `context-lab hook recall-for --purpose commit`.
-2. Soft clients (Cursor: no ambient inject) call `memory_context` after scope bind and before history-dependent work. Ambient clients (Claude/Codex) already inject standing context.
+2. Soft clients call `memory_context(cwd, task, since=held_place)` after scope bind and before history-dependent work. Ambient clients receive standing context only at `SessionStart`.
 3. Candidates stay inert until confirmed in the workbench. Propose one sharp ticket-scoped `title`+`claim`+`source_ids` per outcome. Unrelated later-fixes use `memory_park`, not propose/journal/baseline.
 4. Lab-wide writes need explicit user approval and `confirm_global=true`.
 
@@ -133,7 +133,7 @@ Setup is not recall.
 ### Suggested agent loop
 
 1. **Scope** once (`memory_initiate` / `memory_allocate_ticket` as needed).
-2. **Recall** — soft clients (Cursor) call `memory_context` after bind and before history-dependent work; ambient clients already get standing inject and call `memory_context` for focused queries / commit.
+2. **Recall** — soft clients call `memory_context(cwd, task, since=held_place)` after bind and before history-dependent work. Ambient clients receive standing context at `SessionStart` and call `memory_context` for focused queries.
 3. **Read evidence** when a condition matters (`memory_source`).
 4. **Record** observations (`memory_observe`); propose one sharp ticket-scoped candidate (`memory_propose`: title+claim+source_ids).
 5. **Commit** — `context-lab hook recall-for --purpose commit` before `git commit`.
@@ -141,7 +141,7 @@ Setup is not recall.
 
 Suggested instruction block for agent prompts:
 
-> Soft clients: call memory_context after scope bind and before history-dependent decisions. Ambient clients already inject standing context. Before git commit, run recall-for. After outcomes, observe evidence and propose one durable ticket-scoped candidate. Candidates stay inert until UI confirm. A prior agent suggestion is not a confirmed project change.
+> Soft clients: call memory_context with cwd, task, and the optional last place after scope bind and before history-dependent decisions. Ambient clients receive standing context at SessionStart only. Before git commit, run recall-for. After outcomes, observe evidence and propose one durable ticket-scoped candidate. Candidates stay inert until UI confirm. A prior agent suggestion is not a confirmed project change.
 
 
 ### MCP tools
@@ -427,7 +427,7 @@ Use the same database as your MCP/worktree scope. For an existing checkout datab
 python3 -m context_lab --db workspace/memory.sqlite3 usage --project context-lab --ticket 768
 ```
 
-Counts use **ceil(UTF-8 bytes / 4)** separately for each request and response, not actual tokenizer counts or billed usage. MCP requests include the tool name and arguments; responses include returned text, including tool errors. Hooks count the injected context only (not the original user prompt), including session-start rules and the printed `recall-for` context. Initialization instructions and tool definitions are tracked separately as unassigned setup traffic. Unknown tools and malformed transport messages are excluded.
+Counts use **ceil(UTF-8 bytes / 4)** separately for each request and response, not actual tokenizer counts or billed usage. MCP requests include the tool name and arguments; responses include returned text, including tool errors. Hooks count `SessionStart` standing context and the printed `recall-for` context. The `UserPromptSubmit` identity signal does not open a memory store or record usage. Initialization instructions and tool definitions are tracked separately as unassigned setup traffic. Unknown tools and malformed transport messages are excluded.
 
 Reports break down event counts and request/response estimates by project, ticket, channel, and operation. `--ticket ""` selects only the project's baseline; `--ticket` requires `--project`. Calls with only a run/memory ID use that record's scope. Mixed-scope batches and calls without a known scope stay unassigned, visible only in the unfiltered report. Injections are charged to the active ticket, even when recalling baseline rules.
 

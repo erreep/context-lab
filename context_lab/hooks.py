@@ -12,7 +12,8 @@ from pathlib import Path
 
 from . import agent_api, usage
 from .engine import DEFAULT_DB, ROOT
-from .schemas import AgentError, wire_dumps
+from .schemas import AgentError, wire_dumps, wire_estimated_tokens
+from .scope import BoundIdentity, identity_at, place_token, switch_token
 from .store import Store
 
 INJECT_BUDGET = 800
@@ -122,36 +123,61 @@ def _read_hook_stdin(raw=None):
     return data
 
 
-def _cwd_from_payload(payload, fallback=None):
-    cwd = payload.get("cwd") or fallback or os.getcwd()
-    if not isinstance(cwd, str) or not cwd.strip():
-        raise ValueError("cwd required")
-    return cwd
+def client_location(payload):
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        return cwd
+    roots = payload.get("workspace_roots")
+    if not isinstance(roots, list):
+        roots = []
+    if len(roots) > 1:
+        raise AgentError(
+            "ambiguous_workspace_roots",
+            "cwd required when multiple workspace roots are present",
+            field="cwd",
+        )
+    if len(roots) == 1 and isinstance(roots[0], str) and roots[0].strip():
+        return roots[0]
+    raise AgentError("client_location_missing", "cwd required", field="cwd")
+
+
+def _identity_fields(identity, since):
+    current = place_token(identity)
+    if since == current:
+        return {}
+    out = {"place": current}
+    if isinstance(since, str):
+        out["switch"] = switch_token(since, current)
+    return out
+
+
+def _with_identity(view, identity, since):
+    out = {**view, **_identity_fields(identity, since)}
+    estimate = 0
+    for _ in range(4):
+        estimate = wire_estimated_tokens({**out, "wire_estimated_tokens": estimate})
+    out["wire_estimated_tokens"] = estimate
+    return out
+
+
+def _payload_identity(payload):
+    try:
+        return identity_at(client_location(payload))
+    except AgentError as exc:
+        return f"unavailable:{exc.code}"
 
 
 def inject(payload=None, event_name="UserPromptSubmit"):
     payload = payload if payload is not None else _read_hook_stdin()
-    cwd = _cwd_from_payload(payload)
-    try:
-        scope = load_scope(cwd=cwd)
-    except AgentError as e:
-        print(e.hint or SCOPE_HINT, file=sys.stderr)
+    identity = _payload_identity(payload)
+    current = identity if isinstance(identity, str) else place_token(identity)
+    since = payload.get("since")
+    if since == current:
         return 0
-    prompt = payload.get("prompt") or ""
-    if not isinstance(prompt, str):
-        prompt = str(prompt)
-    store = Store(scope["db"])
-    try:
-        view = agent_api.context(
-            store,
-            {"query": prompt, "project": scope["project"], "ticket": scope["ticket"]},
-            budget=INJECT_BUDGET,
-            detail="agent",
-        )
-        text = wire_dumps(view)
-        usage.record(store, "hook", event_name, (scope["project"], scope["ticket"]), response=text)
-    finally:
-        store.close()
+    view = {"place": current}
+    if isinstance(since, str):
+        view["switch"] = switch_token(since, current)
+    text = wire_dumps(view)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": event_name,
@@ -163,38 +189,52 @@ def inject(payload=None, event_name="UserPromptSubmit"):
 
 def session_start(payload=None):
     payload = payload if payload is not None else _read_hook_stdin()
-    cwd = _cwd_from_payload(payload)
-    try:
-        scope = load_scope(cwd=cwd)
-    except AgentError as e:
-        print(e.hint or SCOPE_HINT, file=sys.stderr)
+    identity = _payload_identity(payload)
+    if not isinstance(identity, BoundIdentity):
+        current = identity if isinstance(identity, str) else place_token(identity)
+        view = {"place": current}
+        since = payload.get("since")
+        if isinstance(since, str) and since != current:
+            view["switch"] = switch_token(since, current)
+        text = wire_dumps(view)
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": text,
+            }
+        }, ensure_ascii=False))
         return 0
-    store = Store(scope["db"])
+    store = Store(str(identity.database))
     try:
-        # Baseline + __global__ only: omit ticket so ticket decisions stay out.
         view = agent_api.context(
             store,
             {
                 "query": "standing rules and hard gates for this session",
-                "project": scope["project"],
+                "project": identity.scope.project,
             },
             budget=INJECT_BUDGET,
             detail="agent",
         )
-        # MCP initialize already ships GATE_TEXT. SessionStart pays standing context + a one-line soft/ambient stub.
+        view = _with_identity(view, identity, payload.get("since"))
         stub = (
             "Context Lab: standing context below. Soft clients (no ambient inject) still call "
             "memory_context after bind and before history-dependent work; before commit run recall-for."
         )
         from .parking import ParkingLot
-        later_n = ParkingLot(store).count(scope["project"])
+        later_n = ParkingLot(store).count(identity.scope.project)
         if later_n > 0:
             stub = (
-                f"Later: {later_n} items. context-lab parking list --project {scope['project']}\n\n"
+                f"Later: {later_n} items. context-lab parking list --project {identity.scope.project}\n\n"
                 + stub
             )
         text = stub + "\n\n" + wire_dumps(view)
-        usage.record(store, "hook", "SessionStart", (scope["project"], scope["ticket"]), response=text)
+        usage.record(
+            store,
+            "hook",
+            "SessionStart",
+            (identity.scope.project, identity.scope.ticket),
+            response=text,
+        )
     finally:
         store.close()
     print(json.dumps({
@@ -280,14 +320,16 @@ def _gate_payload(adapter, payload=None):
     if adapter == "claude":
         tool_input = payload.get("tool_input") or {}
         return tool_input.get("command"), payload.get("cwd")
-    roots = payload.get("workspace_roots") or []
-    return payload.get("command"), payload.get("cwd") or (roots[0] if roots else None)
+    return payload.get("command"), client_location(payload)
 
 
 def gate_git(purpose="commit", cwd=None, adapter="git", payload=None):
     if purpose != "commit":
         return _deny_out(adapter, f"unsupported purpose {purpose}; {RECALL_HINT}")
-    command, payload_cwd = _gate_payload(adapter, payload)
+    try:
+        command, payload_cwd = _gate_payload(adapter, payload)
+    except AgentError as exc:
+        return _deny_out(adapter, exc.message)
     # Never trust the harness matcher alone: it fired on non-commit commands. Pass those through silently.
     if isinstance(command, str) and not GIT_COMMIT_RE.search(command):
         return 0
@@ -420,7 +462,7 @@ alwaysApply: true
 
 # Context Lab (Cursor)
 
-No ambient context inject here. After scope bind, call `memory_context` before history-dependent work.
+No ambient context inject here. Call `memory_context(cwd, task, since=held_place)` after scope bind and before history-dependent work.
 Before `git commit`, run `context-lab hook recall-for --purpose commit`.
 Candidates stay inert until confirmed in the local UI. Propose title+claim+source_ids only unless asked for more.
 """
@@ -433,8 +475,8 @@ args = ["mcp"]
 """
 
 AMBIENT = {
-    "claude": "SessionStart + UserPromptSubmit (ambient inject) + PreToolUse git gate",
-    "codex": "SessionStart + UserPromptSubmit (ambient inject); enable [features] codex_hooks = true",
+    "claude": "SessionStart standing recall + UserPromptSubmit identity + PreToolUse git gate",
+    "codex": "SessionStart standing recall + UserPromptSubmit identity; enable [features] codex_hooks = true",
     "cursor": "none — no ambient inject / prompt injection on Cursor",
 }
 
@@ -564,7 +606,7 @@ alwaysApply: true
 Global install wires MCP only. Per-repo ambient/lease still need:
 `context-lab install --client cursor --project P --ticket T`
 
-No ambient inject. Call `memory_context` after scope bind and before history-dependent work.
+No ambient inject. Call `memory_context(cwd, task, since=held_place)` after scope bind and before history-dependent work.
 Before commit: `context-lab hook recall-for --purpose commit`. Candidates stay inert until UI confirm.
 """
 
@@ -661,7 +703,7 @@ def build_parser(sub):
     scope_p.add_argument("--project", required=True)
     scope_p.add_argument("--ticket", default="")
     scope_p.add_argument("--db", default=None)
-    hook_sub.add_parser("inject", help="UserPromptSubmit ambient context injection")
+    hook_sub.add_parser("inject", help="UserPromptSubmit repository identity signal")
     hook_sub.add_parser("session-start", help="SessionStart standing rules + gate text")
     recall = hook_sub.add_parser("recall-for", help="Recall and issue a commit lease")
     recall.add_argument("--purpose", required=True, choices=["commit"])

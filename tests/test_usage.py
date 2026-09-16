@@ -13,6 +13,7 @@ from unittest.mock import patch
 from context_lab import agent_api, hooks, usage
 from context_lab.mcp import serve_mcp
 from context_lab.schemas import GATE_TEXT, wire_dumps
+from context_lab.scope import BranchScopes, MemoryScope
 from context_lab.store import Store
 
 
@@ -105,21 +106,36 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(usage.report(self.store, "app", "")["events"], 0)
 
     def test_hook_injection_counts_full_text_without_prompt(self):
-        scope = {"project": "app", "ticket": "768", "db": self.path}
-        for hook, operation in [(hooks.inject, "UserPromptSubmit"), (hooks.session_start, "SessionStart")]:
-            out = io.StringIO()
-            with patch("context_lab.hooks.load_scope", return_value=scope), contextlib.redirect_stdout(out):
-                hook({"cwd": self.temp.name, "prompt": "Recall café 日本語"})
-            text = json.loads(out.getvalue())["hookSpecificOutput"]["additionalContext"]
-            row = self.store.db.execute("SELECT * FROM usage_events WHERE operation=?", (operation,)).fetchone()
-            self.assertEqual(row["request_estimated_tokens"], 0)
-            self.assertEqual(row["response_estimated_tokens"], (len(text.encode()) + 3) // 4)
-            self.assertEqual(row["ticket"], "768")
-            if operation == "SessionStart":
-                # Standing packet + short stub; full GATE_TEXT lives on MCP initialize, not re-dumped here.
-                self.assertTrue(text.startswith("Context Lab: standing context"))
-                self.assertNotIn(GATE_TEXT.strip().splitlines()[0], text.splitlines()[:1])
-        self.assertEqual(usage.report(self.store, "app", "768")["events"], 2)
+        repo = Path(self.temp.name) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        BranchScopes.bind_current(
+            repo,
+            MemoryScope("app", "768"),
+            database=self.path,
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            hooks.inject({"cwd": str(repo), "prompt": "Recall café 日本語"})
+        identity_text = json.loads(out.getvalue())["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(json.loads(identity_text), {"place": "app/768"})
+        self.assertIsNone(self.store.db.execute(
+            "SELECT * FROM usage_events WHERE operation='UserPromptSubmit'",
+        ).fetchone())
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            hooks.session_start({"cwd": str(repo)})
+        text = json.loads(out.getvalue())["hookSpecificOutput"]["additionalContext"]
+        row = self.store.db.execute(
+            "SELECT * FROM usage_events WHERE operation='SessionStart'",
+        ).fetchone()
+        self.assertEqual(row["request_estimated_tokens"], 0)
+        self.assertEqual(row["response_estimated_tokens"], (len(text.encode()) + 3) // 4)
+        self.assertEqual(row["ticket"], "768")
+        self.assertTrue(text.startswith("Context Lab: standing context"))
+        self.assertNotIn(GATE_TEXT.strip().splitlines()[0], text.splitlines()[:1])
+        self.assertEqual(usage.report(self.store, "app", "768")["events"], 1)
 
     def test_journal_is_metered_once_per_call_even_on_retry(self):
         notes = Path(self.temp.name) / "notes"
