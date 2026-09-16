@@ -1,5 +1,4 @@
 import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,16 +14,11 @@ from context_lab.scope import (
     place_token,
     switch_token,
 )
+from tests.git_support import run_git
 
 
-def _git(cwd, *args):
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def _git(cwd, *args, home):
+    return run_git(cwd, *args, home=home)
 
 
 class ScopeFingerprintTests(unittest.TestCase):
@@ -33,12 +27,12 @@ class ScopeFingerprintTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        _git(self.repo, "init")
-        _git(self.repo, "config", "user.email", "lab@example.com")
-        _git(self.repo, "config", "user.name", "Lab")
+        _git(self.repo, "init", home=self.root)
+        _git(self.repo, "config", "user.email", "lab@example.com", home=self.root)
+        _git(self.repo, "config", "user.name", "Lab", home=self.root)
         (self.repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(self.repo, "add", "a.txt")
-        _git(self.repo, "commit", "-m", "init")
+        _git(self.repo, "add", "a.txt", home=self.root)
+        _git(self.repo, "commit", "-m", "init", home=self.root)
         self.database = self.root / "memory.sqlite3"
 
     def tearDown(self):
@@ -63,14 +57,14 @@ class ScopeFingerprintTests(unittest.TestCase):
         self.assertEqual(place_token(identity), "context-lab/T-42")
 
     def test_branch_name_never_becomes_a_ticket(self):
-        _git(self.repo, "switch", "-c", "T-99")
+        _git(self.repo, "switch", "-c", "T-99", home=self.root)
         identity = identity_at(self.repo)
         self.assertIsInstance(identity, UnboundIdentity)
         self.assertEqual(identity.branch, "refs/heads/T-99")
         self.assertEqual(place_token(identity), "unbound:refs/heads/T-99")
 
     def test_detached_identity(self):
-        _git(self.repo, "checkout", "--detach")
+        _git(self.repo, "checkout", "--detach", home=self.root)
         identity = identity_at(self.repo)
         self.assertIsInstance(identity, DetachedIdentity)
         self.assertEqual(place_token(identity), "detached")

@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 import tempfile
 import unittest
 import uuid
@@ -13,6 +12,7 @@ from context_lab.review import inbox_state
 from context_lab.schemas import AgentError
 from context_lab.scope import BranchScopes, MemoryScope
 from context_lab.store import GLOBAL_PROJECT, Store
+from tests.git_support import run_git
 
 
 SECRET = "PARK_SECRET_NEVER_RECALL"
@@ -129,14 +129,13 @@ class ParkingTests(unittest.TestCase):
     def test_park_records_bound_ticket_and_rejects_other_project(self):
         repo = Path(self.temp.name) / "repo"
         repo.mkdir()
-        def git(*args):
-            subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
-        git("init")
-        git("config", "user.email", "lab@example.com")
-        git("config", "user.name", "Lab")
+        home = Path(self.temp.name)
+        run_git(repo, "init", home=home)
+        run_git(repo, "config", "user.email", "lab@example.com", home=home)
+        run_git(repo, "config", "user.name", "Lab", home=home)
         (repo / "a.txt").write_text("a\n", encoding="utf-8")
-        git("add", "a.txt")
-        git("commit", "-m", "init")
+        run_git(repo, "add", "a.txt", home=home)
+        run_git(repo, "commit", "-m", "init", home=home)
         BranchScopes.bind_current(
             str(repo), MemoryScope(PROJECT, TICKET),
             database=self.store.path,

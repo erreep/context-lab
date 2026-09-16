@@ -21,12 +21,11 @@ from context_lab.hooks import (
     set_scope,
 )
 from context_lab.store import Store
+from tests.git_support import git_env, run_git
 
 
-def _git(cwd, *args, check=True):
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=check, capture_output=True, text=True,
-    )
+def _git(cwd, *args, home, check=True):
+    return run_git(cwd, *args, home=home, check=check)
 
 
 def _recall(cwd, **kwargs):
@@ -40,12 +39,12 @@ class GitGateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        _git(self.repo, "init")
-        _git(self.repo, "config", "user.email", "lab@example.com")
-        _git(self.repo, "config", "user.name", "Lab")
+        _git(self.repo, "init", home=self.root)
+        _git(self.repo, "config", "user.email", "lab@example.com", home=self.root)
+        _git(self.repo, "config", "user.name", "Lab", home=self.root)
         (self.repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(self.repo, "add", "a.txt")
-        _git(self.repo, "commit", "-m", "init")
+        _git(self.repo, "add", "a.txt", home=self.root)
+        _git(self.repo, "commit", "-m", "init", home=self.root)
         self.db = str(self.root / "memory.sqlite3")
         self.store = Store(self.db)
         with patch("context_lab.knowledge.discover_obsidian_vaults", return_value=[]):
@@ -75,12 +74,12 @@ class GitGateTests(unittest.TestCase):
         self.assertEqual(gate_git(cwd=str(self.repo)), 0)
 
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
-        _git(self.repo, "add", "b.txt")
+        _git(self.repo, "add", "b.txt", home=self.root)
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
         self.assertEqual(_recall(str(self.repo)), 0)
         self.assertEqual(gate_git(cwd=str(self.repo)), 0)
-        _git(self.repo, "commit", "-m", "add b")
+        _git(self.repo, "commit", "-m", "add b", home=self.root)
         self.assertEqual(gate_git(cwd=str(self.repo)), 1)
 
     def test_expired_lease_blocks(self):
@@ -118,9 +117,9 @@ class GitGateTests(unittest.TestCase):
     def test_installed_hook_gates_real_git_commit(self):
         self.assertEqual(install_git(cwd=str(self.repo)), 0)
         # No PYTHONPATH: the script must locate the checkout through its baked CONTEXT_LAB_HOME.
-        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        env = git_env(self.root, {k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
-        _git(self.repo, "add", "b.txt")
+        _git(self.repo, "add", "b.txt", home=self.root)
         blocked = subprocess.run(["git", "commit", "-m", "no lease"], cwd=self.repo,
                                  capture_output=True, text=True, env=env)
         self.assertNotEqual(blocked.returncode, 0)
@@ -141,10 +140,10 @@ class GitGateTests(unittest.TestCase):
         wrapper = bin_dir / "python3"
         wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" -S "$@"\n', encoding="utf-8")
         wrapper.chmod(0o755)
-        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PATH")}
+        env = git_env(self.root, {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PATH")})
         env["PATH"] = str(bin_dir)
         (self.repo / "b.txt").write_text("b\n", encoding="utf-8")
-        _git(self.repo, "add", "b.txt")
+        _git(self.repo, "add", "b.txt", home=self.root)
         blocked = subprocess.run(["git", "commit", "-m", "x"], cwd=self.repo,
                                  capture_output=True, text=True, env=env)
         self.assertNotEqual(blocked.returncode, 0)
@@ -153,13 +152,13 @@ class GitGateTests(unittest.TestCase):
         self.assertNotIn("Traceback", blocked.stderr)
 
     def test_install_git_refuses_when_hooks_path_set(self):
-        _git(self.repo, "config", "core.hooksPath", ".githooks")
+        _git(self.repo, "config", "core.hooksPath", ".githooks", home=self.root)
         self.assertEqual(install_git(cwd=str(self.repo)), 1)
-        hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())
+        hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks", home=self.root).stdout.strip())
         self.assertFalse((self.repo / hooks / "pre-commit").exists())
 
     def test_install_git_leaves_existing_pre_commit(self):
-        hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks").stdout.strip())
+        hooks = Path(_git(self.repo, "rev-parse", "--git-path", "hooks", home=self.root).stdout.strip())
         if not hooks.is_absolute():
             hooks = self.repo / hooks
         hooks.mkdir(parents=True, exist_ok=True)
@@ -170,9 +169,9 @@ class GitGateTests(unittest.TestCase):
         self.assertEqual(existing.read_text(encoding="utf-8"), before)
 
     def test_worktrees_hold_separate_scopes_and_leases(self):
-        _git(self.repo, "branch", "wt-b")
+        _git(self.repo, "branch", "wt-b", home=self.root)
         wt = self.root / "wt"
-        _git(self.repo, "worktree", "add", str(wt), "wt-b")
+        _git(self.repo, "worktree", "add", str(wt), "wt-b", home=self.root)
         db2 = str(self.root / "memory2.sqlite3")
         store2 = Store(db2)
         try:

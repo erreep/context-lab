@@ -13,6 +13,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from context_lab import review
 from context_lab.hooks import install
 from context_lab.review import (
     ReviewReady,
@@ -25,11 +26,13 @@ from context_lab.review import (
     print_install_handoff,
 )
 from context_lab.store import Store
+from tests.git_support import run_git
 
 
-def _db() -> Path:
-    root = Path(tempfile.mkdtemp())
-    path = root / "memory.sqlite3"
+def _db(testcase: unittest.TestCase) -> Path:
+    root = tempfile.TemporaryDirectory()
+    testcase.addCleanup(root.cleanup)
+    path = Path(root.name) / "memory.sqlite3"
     Store(str(path)).close()
     return path
 
@@ -42,14 +45,14 @@ def _free_port() -> int:
 
 class ReviewUnitTests(unittest.TestCase):
     def test_health_payload_is_digest_not_path(self):
-        path = _db()
+        path = _db(self)
         payload = health_payload(path)
         self.assertEqual(payload["service"], "context-lab")
         self.assertEqual(payload["database"], database_id(path))
         self.assertNotIn(str(path), json.dumps(payload))
 
     def test_inbox_state_distinguishes_fresh_and_caught_up(self):
-        path = _db()
+        path = _db(self)
         store = Store(str(path))
         try:
             fresh = inbox_state(store)
@@ -83,8 +86,32 @@ class ReviewUnitTests(unittest.TestCase):
 
 
 class ReviewLiveTests(unittest.TestCase):
+    def setUp(self):
+        self._servers: list[subprocess.Popen] = []
+        original_spawn = review._spawn
+
+        def track_spawn(db_path, port):
+            proc = original_spawn(db_path, port)
+            self._servers.append(proc)
+            return proc
+
+        self._spawn_patch = mock.patch("context_lab.review._spawn", track_spawn)
+        self._spawn_patch.start()
+
+    def tearDown(self):
+        self._spawn_patch.stop()
+        for proc in self._servers:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        self._servers.clear()
+
     def test_open_review_on_free_port_is_ready_and_idempotent(self):
-        path = _db()
+        path = _db(self)
         port = _free_port()
         with mock.patch("context_lab.review.webbrowser.open", return_value=True):
             first = open_review(path, open_browser=True, preferred_port=port)
@@ -100,7 +127,7 @@ class ReviewLiveTests(unittest.TestCase):
             self.assertEqual(second.origin.value, "reused")
 
     def test_install_handoff_non_tty_does_not_claim_live_url(self):
-        path = _db()
+        path = _db(self)
         buf = io.StringIO()
         outcome = print_install_handoff(path, ReviewRoute("app", "T-1"), out=buf)
         text = buf.getvalue()
@@ -117,16 +144,17 @@ class InstallHandoffTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         repo = Path(temp.name) / "repo"
         repo.mkdir()
-        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "lab@example.com"], cwd=repo, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Lab"], cwd=repo, check=True, capture_output=True)
+        home = Path(temp.name)
+        run_git(repo, "init", home=home)
+        run_git(repo, "config", "user.email", "lab@example.com", home=home)
+        run_git(repo, "config", "user.name", "Lab", home=home)
         (repo / "a.txt").write_text("a\n", encoding="utf-8")
-        subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+        run_git(repo, "add", "a.txt", home=home)
+        run_git(repo, "commit", "-m", "init", home=home)
         out, err = io.StringIO(), io.StringIO()
-        os.environ["CONTEXT_LAB_REVIEW"] = "0"
-        with redirect_stdout(out), redirect_stderr(err):
-            code = install("cursor", project="app", ticket="T-1", git=False, force=True, cwd=str(repo))
+        with mock.patch.dict(os.environ, {"CONTEXT_LAB_REVIEW": "0"}):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = install("cursor", project="app", ticket="T-1", git=False, force=True, cwd=str(repo))
         self.assertEqual(code, 0)
         text = out.getvalue()
         self.assertIn("Review UI", text)
