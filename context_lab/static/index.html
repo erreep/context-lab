@@ -19,6 +19,8 @@
 .review-card .claim-box{min-height:120px;font-size:13px;line-height:1.5;font-weight:400}
 .kbd-hint{font-size:10px;color:var(--muted);margin-top:8px}
 .pending-badge{font-size:11px;color:var(--muted);padding:3px 8px;border-radius:999px;background:var(--soft);font-weight:650}
+.pending-badge.actionable{cursor:pointer}
+.pending-badge.actionable:hover{border-color:#829b8d;background:#e6ebe3}
 #lab-tools[aria-pressed="true"]{background:var(--green);border-color:var(--green);color:#fff}
 .empty-inbox{text-align:left;padding:20px 16px}
 .empty-inbox h3{margin:0 0 6px;font-size:15px;font-weight:720}
@@ -34,6 +36,7 @@ body.inbox-mode .review-desk{border-right:0}
 <header class="app-header">
   <div class="brand">Context Lab</div>
   <span id="pending-badge" class="pending-badge">0 waiting</span>
+  <button type="button" id="later-badge" class="pending-badge actionable">Later (0)</button>
   <label class="header-field">Project <select id="project-select" aria-label="Project"><option value="">Loading</option></select></label>
   <label class="header-field">Ticket <select id="ticket-select" aria-label="Ticket"><option value="">Project defaults</option></select></label>
   <button class="small quiet" id="new-project">New project</button>
@@ -77,6 +80,12 @@ body.inbox-mode .review-desk{border-right:0}
     <div id="preview-result"><div class="card empty">Build a targeted context packet.</div></div>
   </aside>
 </main>
+
+<dialog id="later-dialog">
+  <div class="dialog-head"><h2>Later</h2><button data-close="later-dialog">Close</button></div>
+  <div class="notice">Parked fixes stay out of recall until you start them on a ticket or dismiss them.</div>
+  <div id="later-list"></div>
+</dialog>
 
 <dialog id="standing-dialog">
   <div class="dialog-head"><h2>Standing rules</h2><button data-close="standing-dialog">Close</button></div>
@@ -201,7 +210,8 @@ function parseWorkbench(ws,data){
     })),
     feedback:data.feedback||[],
     capabilities:{modelPlanner:!!data.model_available,embeddings:!!data.embeddings_available},
-    inbox:data.inbox||null
+    inbox:data.inbox||null,
+    later:data.later||{count:0,items:[]}
   };
 }
 function parseComparison(data){
@@ -308,6 +318,14 @@ function renderChrome(){
   $('embeddings').disabled=!shell.workbench.capabilities.embeddings;
   const waiting=shell.workbench.layers.flatMap(layer=>layer.rows).filter(row=>row.access==='review').length;
   $('pending-badge').textContent=waiting+' waiting';
+  const laterCount=shell.workbench.later?.count||0;
+  const laterBadge=$('later-badge');
+  laterBadge.textContent='Later ('+laterCount+')';
+}
+function renderLaterList(){
+  const items=shell.workbench.later?.items||[];
+  if(!items.length){$('later-list').innerHTML='<div class="empty">Nothing parked for this project.</div>';return}
+  $('later-list').innerHTML=items.map(item=>'<article class="card" data-park-id="'+esc(item.id)+'"><div class="row-foot"><span class="pill candidate">parked</span><span>'+esc(item.id)+'</span></div><h3>'+esc(item.title)+'</h3><p class="hint">'+esc(item.later||'No later note')+'</p><div class="source-body">'+esc(item.body)+'</div><div class="actions"><button type="button" class="small primary" data-later-start="'+esc(item.id)+'" data-new-ticket="1">Start new ticket</button><button type="button" class="small" data-later-start="'+esc(item.id)+'" data-existing-ticket="1">Start on ticket</button><button type="button" class="small danger" data-later-dismiss="'+esc(item.id)+'">Dismiss</button></div></article>').join('');
 }
 function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
 function renderLayers(){
@@ -546,6 +564,28 @@ document.addEventListener('click',async event=>{
     if(button.dataset.readSource){const source=await api('source/'+encodeURIComponent(button.dataset.readSource));shell.selection={kind:'source',source};renderDesk();return}
     if(button.dataset.draftSource){const result=await api('draft',{source_id:button.dataset.draftSource});shell.selection={kind:'compose-memory',target:shell.workspace.kind};renderDesk();if(result.memories?.[0]){const form=$('memory-form'),draft=result.memories[0];for(const key of ['title','claim','kind','rationale','expected_effect'])if(form.elements[key])form.elements[key].value=draft[key]||'';form.elements.source_ids.value=(draft.source_ids||[]).join(', ')}showToast((result.memories||[]).length+' draft lessons returned.');return}
     if(button.dataset.history){const result=await api('revisions/'+encodeURIComponent(button.dataset.history));$('history-title').textContent='Revision history · '+button.dataset.history;$('history-body').textContent=result.revisions.map(item=>'v'+item.version+' · '+item.status+'\n'+item.claim).join('\n\n');$('history-dialog').showModal();return}
+    if(button.dataset.laterStart){
+      const parkId=button.dataset.laterStart;
+      let payload={park_id:parkId,command_id:'cmd-'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)};
+      if(button.dataset.newTicket!==undefined)payload.new_ticket=true;
+      else{
+        const ticket=prompt('Destination ticket id');
+        if(!ticket)return;
+        payload.ticket=ticket.trim();
+      }
+      const result=await api('parking-start',payload);
+      await refreshSnapshots(shell.workspace);
+      renderLaterList();render();
+      showToast('Started on '+result.destination_ticket+' · candidate '+result.candidate_id);
+      return;
+    }
+    if(button.dataset.laterDismiss){
+      await api('parking-dismiss',{park_id:button.dataset.laterDismiss,command_id:'cmd-'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)});
+      await refreshSnapshots(shell.workspace);
+      renderLaterList();render();
+      showToast('Parked item dismissed.');
+      return;
+    }
     if(button.dataset.globalEdit){const memory=globalGovernancePort.load().rows.find(row=>row.memory.id===button.dataset.globalEdit)?.memory;if(memory)fillGlobalMemory(memory);return}
   }catch(error){showToast(error.message,true)}
 });
@@ -639,6 +679,7 @@ $('lab-tools').addEventListener('click',()=>{
   $('lab-tools').setAttribute('aria-pressed',lab?'true':'false');
 });
 $('open-standing').addEventListener('click',()=>openStanding());
+$('later-badge').addEventListener('click',()=>{renderLaterList();$('later-dialog').showModal()});
 $('open-benchmark').addEventListener('click',()=>{$('benchmark-dialog').showModal();$('lab-menu').open=false});
 $('export-data').addEventListener('click',async()=>{try{download('context-lab-export.json',await api('export'))}catch(error){showToast(error.message,true)}});
 $('clear-global-form').addEventListener('click',clearGlobalForm);
@@ -662,7 +703,7 @@ $('run-benchmark').addEventListener('click',async()=>{try{$('run-benchmark').dis
     if(!project){
       const info=await api('info');
       shell.workspace=null;
-      shell.workbench={workspace:null,layers:[],feedback:[],capabilities:{modelPlanner:!!info.model_available,embeddings:!!info.embeddings_available},inbox:info.inbox||null};
+      shell.workbench={workspace:null,layers:[],feedback:[],capabilities:{modelPlanner:!!info.model_available,embeddings:!!info.embeddings_available},inbox:info.inbox||null,later:info.later||{count:0,items:[]}};
       shell.selection={kind:'none'};
       $('scenario').innerHTML='<option value="">Custom task</option>'+shell.scenarios.map(item=>'<option value="'+esc(item.id)+'">'+esc(item.label)+'</option>').join('');
       $('project-select').innerHTML='<option value="">No project yet</option>';

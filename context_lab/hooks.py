@@ -186,6 +186,13 @@ def session_start(payload=None):
             "Context Lab: standing context below. Soft clients (no ambient inject) still call "
             "memory_context after bind and before history-dependent work; before commit run recall-for."
         )
+        from .parking import ParkingLot
+        later_n = ParkingLot(store).count(scope["project"])
+        if later_n > 0:
+            stub = (
+                f"Later: {later_n} items. context-lab parking list --project {scope['project']}\n\n"
+                + stub
+            )
         text = stub + "\n\n" + wire_dumps(view)
         usage.record(store, "hook", "SessionStart", (scope["project"], scope["ticket"]), response=text)
     finally:

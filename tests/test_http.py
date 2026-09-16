@@ -59,6 +59,7 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("To review", page)
         self.assertIn("Nothing waiting.", page)
         self.assertIn('id="pending-badge"', page)
+        self.assertIn('id="later-badge"', page)
         self.assertIn("inbox-mode", page)
         self.assertIn("Lab tools", page)
         store = Store(self.db_path)

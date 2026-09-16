@@ -98,6 +98,12 @@ TOOLS = [
           "kind": {"type": "string", "enum": ["plan", "decision", "progress", "handoff"]},
           "title": {"type": "string"}, "body": {"type": "string"}},
          ["project", "ticket", "kind", "title", "body"], False),
+    tool("memory_park",
+         "Park an unrelated later-fix for human triage. Same project as the bound worktree; ticket is provenance only. "
+         "Does not enter recall or the confirm inbox.",
+         {"project": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"},
+          "later": {"type": "string"}, "capture_key": {"type": "string"}},
+         ["project", "title", "body"], False),
 ]
 
 
@@ -154,15 +160,26 @@ def _context_value_error(exc):
 def _enforce_branch_scope(project, ticket=""):
     """When cwd has a branch binding for this project, reject a mismatched ticket."""
     import os
-    from .scope import BranchScopes, MemoryScope
-    try:
-        resolved = BranchScopes.resolve_current(os.getcwd())
-    except AgentError:
-        return
-    if resolved.scope.project != (project or "").strip():
+    from .scope import BranchScopes, MemoryScope, try_current_scope
+    resolved = try_current_scope()
+    if resolved is None or resolved.scope.project != (project or "").strip():
         return
     BranchScopes.require_request_scope(
         os.getcwd(), MemoryScope(project=project, ticket=ticket or ""))
+
+
+def _reject_bound_project_mismatch(project):
+    from .scope import try_current_scope
+    resolved = try_current_scope()
+    if resolved is None:
+        return
+    if resolved.scope.project != (project or "").strip():
+        raise AgentError(
+            "scope_mismatch",
+            f"Parking project {(project or '').strip()} does not match binding "
+            f"{resolved.scope.project} on {resolved.branch}",
+            field="project",
+        )
 
 
 def call(store, name, args):
@@ -202,6 +219,9 @@ def call(store, name, args):
         _enforce_branch_scope(args["project"], args["ticket"])
         return agent_api.journal(
             store, args["project"], args["ticket"], args["kind"], args["title"], args["body"])
+    if name == "memory_park":
+        _reject_bound_project_mismatch(args["project"])
+        return agent_api.park(store, args)
     raise AgentError("unknown_tool", f"Unknown tool: {name}")
 
 
