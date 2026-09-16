@@ -52,14 +52,22 @@ class TicketWorkspace:
                 st_ino=notes_pin.get("st_ino"),
             )
         pinned = PinnedRoot.pin(home.notes, stored=stored)
-        if pinned.pin and not notes_pin:
-            record = dict(kb or knowledge_mod.empty_kb_record(project, ticket))
-            record["notes_pin"] = {
-                "path": pinned.pin.path,
-                "st_dev": pinned.pin.st_dev,
-                "st_ino": pinned.pin.st_ino,
-            }
-            store.put_knowledge_base(record)
+        if pinned.pin:
+            with store.db:
+                store.db.execute("BEGIN IMMEDIATE")
+                kb = store.knowledge_base(project, ticket) or knowledge_mod.empty_kb_record(project, ticket)
+                if not isinstance(kb.get("notes_pin"), dict):
+                    record = dict(kb)
+                    record["notes_pin"] = {
+                        "path": pinned.pin.path,
+                        "st_dev": pinned.pin.st_dev,
+                        "st_ino": pinned.pin.st_ino,
+                    }
+                    store.db.execute(
+                        "INSERT INTO knowledge_bases VALUES (?,?,?) "
+                        "ON CONFLICT(project,ticket) DO UPDATE SET payload=excluded.payload",
+                        (project, ticket, json.dumps(record)),
+                    )
         return cls(store, pinned, project, ticket, home.notes)
 
     def close(self) -> None:
