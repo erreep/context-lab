@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -13,10 +12,7 @@ from pathlib import Path
 from context_lab.hooks import CONFIG_PATHS, HARNESS_CONFIGS, global_mcp_path, install, install_global
 from context_lab.schemas import AgentError
 from context_lab.scope import BranchScopes
-
-
-def _git(cwd, *args):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+from tests.git_support import run_git
 
 
 def _repo():
@@ -24,12 +20,12 @@ def _repo():
     root = Path(temp.name)
     repo = root / "repo"
     repo.mkdir()
-    _git(repo, "init")
-    _git(repo, "config", "user.email", "lab@example.com")
-    _git(repo, "config", "user.name", "Lab")
+    run_git(repo, "init", home=root)
+    run_git(repo, "config", "user.email", "lab@example.com", home=root)
+    run_git(repo, "config", "user.name", "Lab", home=root)
     (repo / "a.txt").write_text("a\n", encoding="utf-8")
-    _git(repo, "add", "a.txt")
-    _git(repo, "commit", "-m", "init")
+    run_git(repo, "add", "a.txt", home=root)
+    run_git(repo, "commit", "-m", "init", home=root)
     return temp, repo
 
 

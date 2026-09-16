@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from context_lab import agent_api, hooks, usage
+from tests.git_support import run_git
 from context_lab.mcp import serve_mcp
 from context_lab.schemas import GATE_TEXT, wire_dumps
 from context_lab.scope import BranchScopes, MemoryScope
@@ -108,7 +109,7 @@ class UsageTests(unittest.TestCase):
     def test_hook_injection_counts_full_text_without_prompt(self):
         repo = Path(self.temp.name) / "repo"
         repo.mkdir()
-        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        run_git(repo, "init", home=Path(self.temp.name))
         BranchScopes.bind_current(
             repo,
             MemoryScope("app", "768"),

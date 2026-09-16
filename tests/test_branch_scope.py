@@ -1,18 +1,16 @@
 """Branch binding registry: bind, resolve, conflict, detached HEAD."""
 import sqlite3
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from context_lab.schemas import AgentError
 from context_lab.scope import ROUTE_ONLY, BranchScopes, MemoryScope, bind_request
+from tests.git_support import run_git
 
 
-def _git(cwd, *args, check=True):
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=check, capture_output=True, text=True,
-    )
+def _git(cwd, *args, home, check=True):
+    return run_git(cwd, *args, home=home, check=check)
 
 
 class BranchScopeTests(unittest.TestCase):
@@ -21,12 +19,12 @@ class BranchScopeTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        _git(self.repo, "init")
-        _git(self.repo, "config", "user.email", "lab@example.com")
-        _git(self.repo, "config", "user.name", "Lab")
+        _git(self.repo, "init", home=self.root)
+        _git(self.repo, "config", "user.email", "lab@example.com", home=self.root)
+        _git(self.repo, "config", "user.name", "Lab", home=self.root)
         (self.repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(self.repo, "add", "a.txt")
-        _git(self.repo, "commit", "-m", "init")
+        _git(self.repo, "add", "a.txt", home=self.root)
+        _git(self.repo, "commit", "-m", "init", home=self.root)
         self.db = str(self.root / "memory.sqlite3")
         self.scope_a = MemoryScope(project="app", ticket="T-1")
 
@@ -49,7 +47,7 @@ class BranchScopeTests(unittest.TestCase):
         self.assertEqual(shown.scope.ticket, "")
 
     def test_baseline_bind_upgrades_legacy_nonempty_ticket_check(self):
-        common = Path(_git(self.repo, "rev-parse", "--git-common-dir").stdout.strip())
+        common = Path(_git(self.repo, "rev-parse", "--git-common-dir", home=self.root).stdout.strip())
         if not common.is_absolute():
             common = (self.repo / common).resolve()
         path = common / "context-lab" / "branch-bindings.sqlite3"
@@ -109,10 +107,10 @@ class BranchScopeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "unbound_branch")
 
     def test_resolve_after_branch_switch(self):
-        main_branch = _git(self.repo, "symbolic-ref", "--short", "HEAD").stdout.strip()
+        main_branch = _git(self.repo, "symbolic-ref", "--short", "HEAD", home=self.root).stdout.strip()
         BranchScopes.bind_current(str(self.repo), self.scope_a, database=self.db)
-        _git(self.repo, "branch", "feature-b")
-        _git(self.repo, "switch", "feature-b")
+        _git(self.repo, "branch", "feature-b", home=self.root)
+        _git(self.repo, "switch", "feature-b", home=self.root)
         with self.assertRaises(AgentError) as ctx:
             BranchScopes.resolve_current(str(self.repo))
         self.assertEqual(ctx.exception.code, "unbound_branch")
@@ -120,13 +118,13 @@ class BranchScopeTests(unittest.TestCase):
         BranchScopes.bind_current(str(self.repo), scope_b, database=self.db)
         shown = BranchScopes.resolve_current(str(self.repo))
         self.assertEqual(shown.scope, scope_b)
-        _git(self.repo, "switch", main_branch)
+        _git(self.repo, "switch", main_branch, home=self.root)
         shown_main = BranchScopes.resolve_current(str(self.repo))
         self.assertEqual(shown_main.scope, self.scope_a)
 
     def test_detached_head_fails(self):
-        oid = _git(self.repo, "rev-parse", "HEAD").stdout.strip()
-        _git(self.repo, "checkout", oid)
+        oid = _git(self.repo, "rev-parse", "HEAD", home=self.root).stdout.strip()
+        _git(self.repo, "checkout", oid, home=self.root)
         with self.assertRaises(AgentError) as ctx:
             BranchScopes.resolve_current(str(self.repo))
         self.assertEqual(ctx.exception.code, "detached_head")
@@ -174,7 +172,7 @@ class BranchScopeTests(unittest.TestCase):
     def test_legacy_scope_json_written(self):
         BranchScopes.bind_current(str(self.repo), self.scope_a, database=self.db)
         scope_path = Path(
-            _git(self.repo, "rev-parse", "--git-path", "context-lab").stdout.strip(),
+            _git(self.repo, "rev-parse", "--git-path", "context-lab", home=self.root).stdout.strip(),
         )
         if not scope_path.is_absolute():
             scope_path = self.repo / scope_path

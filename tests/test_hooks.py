@@ -12,10 +12,11 @@ from unittest.mock import patch
 from context_lab.agent_api import initiate
 from context_lab.hooks import print_config, set_scope
 from context_lab.store import Store
+from tests.git_support import run_git
 
 
-def _git(cwd, *args):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+def _git(cwd, *args, home):
+    run_git(cwd, *args, home=home)
 
 
 def _run_hook(cwd, command, payload, env=None, argv=()):
@@ -36,9 +37,9 @@ class HookTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        _git(self.repo, "init")
-        _git(self.repo, "config", "user.email", "lab@example.com")
-        _git(self.repo, "config", "user.name", "Lab")
+        _git(self.repo, "init", home=self.root)
+        _git(self.repo, "config", "user.email", "lab@example.com", home=self.root)
+        _git(self.repo, "config", "user.name", "Lab", home=self.root)
         self.db = str(self.root / "memory.sqlite3")
         self.store = Store(self.db)
         with patch("context_lab.knowledge.discover_obsidian_vaults", return_value=[]):
@@ -140,7 +141,7 @@ class HookTests(unittest.TestCase):
     def test_unbound_and_unavailable_inject_compact_place(self):
         other = self.root / "other"
         other.mkdir()
-        _git(other, "init")
+        _git(other, "init", home=self.root)
         result = _run_hook(other, "inject", {
             "session_id": "s2", "cwd": str(other), "prompt": "hello",
         })

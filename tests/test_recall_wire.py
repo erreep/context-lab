@@ -1,5 +1,4 @@
 import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,16 +8,11 @@ from context_lab.mcp import TOOLS, call
 from context_lab.schemas import AgentError
 from context_lab.scope import BranchScopes, MemoryScope
 from context_lab.store import Store
+from tests.git_support import run_git
 
 
-def _git(cwd, *args):
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def _git(cwd, *args, home):
+    return run_git(cwd, *args, home=home)
 
 
 class RecallWireTests(unittest.TestCase):
@@ -27,12 +21,12 @@ class RecallWireTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        _git(self.repo, "init")
-        _git(self.repo, "config", "user.email", "lab@example.com")
-        _git(self.repo, "config", "user.name", "Lab")
+        _git(self.repo, "init", home=self.root)
+        _git(self.repo, "config", "user.email", "lab@example.com", home=self.root)
+        _git(self.repo, "config", "user.name", "Lab", home=self.root)
         (self.repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(self.repo, "add", "a.txt")
-        _git(self.repo, "commit", "-m", "init")
+        _git(self.repo, "add", "a.txt", home=self.root)
+        _git(self.repo, "commit", "-m", "init", home=self.root)
         self.database = self.root / "bound.sqlite3"
         BranchScopes.bind_current(
             self.repo,
@@ -131,7 +125,7 @@ class RecallWireTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "scope_mismatch")
 
     def test_unbound_context_without_project_names_project(self):
-        _git(self.repo, "switch", "-c", "unbound")
+        _git(self.repo, "switch", "-c", "unbound", home=self.root)
         with self.assertRaises(AgentError) as caught:
             call(self.store, "memory_context", {
                 "cwd": str(self.repo),
