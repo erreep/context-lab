@@ -1,13 +1,10 @@
 """Deep agent surface: initiate modes, lab vault binding, context shaping, propose hints."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context, plan_task
-from .pinned_root import PinnedRoot
 from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
+from .ticket_workspace import TicketWorkspace
 from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
 
@@ -209,31 +206,20 @@ def journal(store, project, ticket, kind, title, body):
     if not isinstance(body, str) or not body.strip():
         raise AgentError("validation", "body required", field="body")
     try:
-        home, _created = knowledge_mod.require_journal_home(store, project, ticket)
+        with TicketWorkspace.open(store, project, ticket) as ws:
+            result = ws.write_journal(kind, title, body)
+    except AgentError:
+        raise
     except ValueError as e:
         raise AgentError("journal_not_ready", str(e), field="ticket") from e
-    dest, already = knowledge_mod.journal_note_path(home.notes, kind, title, body)
-    if not already:
-        created = datetime.now(timezone.utc)
-        digest = knowledge_mod.journal_digest(kind, title, body)
-        front = (
-            f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
-            f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
-            f"digest: {digest}\n---\n\n"
-            f"# {title.strip()}\n\n{body.strip()}\n"
-        )
-        relative = dest.relative_to(home.notes)
-        with PinnedRoot.pin(home.notes) as pinned:
-            pinned.write_text(Path(relative), front)
-    indexed = knowledge_mod.index_ticket_file(store, project, ticket, dest)
     out = {
-        "path": indexed["path"],
+        "path": result.relative_path,
         "kind": kind,
-        "status": indexed["status"],
-        "source_id": indexed["source_id"],
+        "status": result.index_status,
+        "source_id": result.source_id,
     }
-    if "chunks" in indexed:
-        out["chunks"] = indexed["chunks"]
+    if result.chunks is not None:
+        out["chunks"] = result.chunks
     return out
 
 

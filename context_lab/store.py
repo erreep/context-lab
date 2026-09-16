@@ -201,6 +201,15 @@ class Store:
             operation TEXT NOT NULL CHECK (operation IN ('start', 'dismiss')),
             request_fingerprint TEXT NOT NULL, result TEXT NOT NULL,
             created_at TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS journal_reservations (
+            project TEXT NOT NULL,
+            ticket TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (project, ticket, kind, slug, digest));
         """)
         # Existing stores predate ticket scope; their records remain project-only.
         with self.db:

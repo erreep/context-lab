@@ -1,6 +1,7 @@
 """memory_journal: provision, short names, slim return, document lane."""
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,6 +77,31 @@ class JournalTests(unittest.TestCase):
         digest = journal_digest("decision", "Same title", "Second body, different.")
         self.assertEqual(other["path"], f"journal/decision-same-title-{digest}.md")
         self.assertEqual(len(list((self.notes / "journal").glob("*.md"))), 2)
+
+    def test_concurrent_same_title_different_body(self):
+        bodies = ["First concurrent body.", "Second concurrent body."]
+        db_path = str(self.root / "memory.sqlite3")
+
+        def write(body):
+            store = Store(db_path)
+            try:
+                return journal(store, "app", "T-1", "decision", "Concurrent title", body)
+            finally:
+                store.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(write, bodies))
+        paths = {r["path"] for r in results}
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(len(list((self.notes / "journal").glob("*.md"))), 2)
+        sources = [s for s in self.store.sources("app", "T-1") if s["title"].startswith("journal/")]
+        self.assertEqual(len(sources), 2)
+        kb = self.store.knowledge_base("app", "T-1")
+        journal_docs = [d for d in kb["documents"] if d.get("path", "").startswith("journal/")]
+        self.assertEqual(len(journal_docs), 2)
+        claims = " ".join(d["claim"] for d in journal_docs).lower()
+        self.assertIn("first concurrent", claims)
+        self.assertIn("second concurrent", claims)
 
     def test_retry_finds_legacy_digest_name(self):
         title, body = "Legacy name", "Same bytes as the retry."
