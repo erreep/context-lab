@@ -7,33 +7,10 @@ import hashlib
 import json
 import math
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+from .egress import EgressClient, assert_local_host, env_local_only
 
-
-def assert_local_host(url):
-    parsed = urllib.parse.urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if host not in LOOPBACK_HOSTS:
-        raise ValueError("CONTEXT_LAB_LOCAL_ONLY requires a loopback CONTEXT_LAB_BASE_URL (127.0.0.1, localhost, ::1)")
-    if parsed.username or parsed.password:
-        raise ValueError("Model endpoint URL must not include userinfo")
-
-
-def env_local_only():
-    raw = os.environ.get("CONTEXT_LAB_LOCAL_ONLY", "1").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
-
-
-class LoopbackRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Reject redirects that leave loopback when local_only is on."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        assert_local_host(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+__all__ = ["ModelEndpoint", "assert_local_host", "env_local_only"]
 
 
 def _allowed_vocab(store, project, rules):
@@ -49,40 +26,25 @@ def _allowed_vocab(store, project, rules):
 
 class ModelEndpoint:
     def __init__(self, store=None, base_url=None, model=None, embedding_model=None, local_only=None):
-        self.base = (base_url or os.environ.get("CONTEXT_LAB_BASE_URL", "")).rstrip("/")
+        self.store = store
         self.model = model or os.environ.get("CONTEXT_LAB_MODEL", "")
         self.embedding_model = embedding_model or os.environ.get("CONTEXT_LAB_EMBEDDING_MODEL", "")
-        self.key = os.environ.get("CONTEXT_LAB_API_KEY", "")
-        self.store = store
-        if not self.base.startswith(("http://", "https://")):
-            raise ValueError("Set CONTEXT_LAB_BASE_URL to a compatible endpoint, including /v1 if required")
         if local_only is None:
             local_only = env_local_only()
         self.local_only = bool(local_only)
-        if self.local_only:
-            assert_local_host(self.base)
+        base = (base_url or os.environ.get("CONTEXT_LAB_BASE_URL", "")).rstrip("/")
+        key = os.environ.get("CONTEXT_LAB_API_KEY", "")
+        self._egress = EgressClient(base, api_key=key, local_only=self.local_only)
+        self.base = self._egress.base
+
+    def _client(self) -> EgressClient:
+        return self._egress
 
     def _opener(self):
-        if self.local_only:
-            # Drop env HTTP(S)_PROXY so work data cannot leave via a corporate proxy.
-            return urllib.request.build_opener(
-                urllib.request.ProxyHandler({}),
-                LoopbackRedirectHandler,
-            )
-        return urllib.request.build_opener()
+        return self._client()._build_opener()
 
     def request(self, route, payload):
-        headers = {"Content-Type": "application/json"}
-        if self.key:
-            headers["Authorization"] = "Bearer " + self.key
-        req = urllib.request.Request(self.base + route, data=json.dumps(payload).encode(), headers=headers)
-        try:
-            with self._opener().open(req, timeout=90) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as e:
-            raise ValueError(f"Model endpoint returned HTTP {e.code}; check model, URL and credentials") from None
-        except (urllib.error.URLError, TimeoutError):
-            raise ValueError("Could not reach model endpoint") from None
+        return self._client().post_json(route, payload)
 
     def complete(self, instructions, payload):
         if not self.model:
