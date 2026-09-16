@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import agent_api, usage
 from .engine import DEFAULT_DB, ROOT
+from .pinned_root import reject_dangling_dest
 from .schemas import AgentError, wire_dumps, with_wire_estimated_tokens
 from .scope import BoundIdentity, identity_at, place_token, switch_token
 from .store import Store
@@ -485,6 +486,7 @@ def _mcp_payload(client):
 
 
 def _write_file(path: Path, content: str, force: bool):
+    reject_dangling_dest(path)
     if path.exists() and not force:
         raise AgentError(
             "already_exists",

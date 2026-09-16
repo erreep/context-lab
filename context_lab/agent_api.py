@@ -1,12 +1,12 @@
 """Deep agent surface: initiate modes, lab vault binding, context shaping, propose hints."""
 from __future__ import annotations
 
-import os
-import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import knowledge as knowledge_mod
 from .engine import catalog, compile_context, plan_task
+from .pinned_root import PinnedRoot
 from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
 from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
@@ -216,26 +216,15 @@ def journal(store, project, ticket, kind, title, body):
     if not already:
         created = datetime.now(timezone.utc)
         digest = knowledge_mod.journal_digest(kind, title, body)
-        dest.parent.mkdir(parents=True, exist_ok=True)
         front = (
             f"---\nkind: {kind}\nproject: {project}\nticket: {ticket}\n"
             f"created_at: {created.strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
             f"digest: {digest}\n---\n\n"
             f"# {title.strip()}\n\n{body.strip()}\n"
         )
-        fd, tmp = tempfile.mkstemp(prefix=".journal-", suffix=".md", dir=str(dest.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(front)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp, dest)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        relative = dest.relative_to(home.notes)
+        with PinnedRoot.pin(home.notes) as pinned:
+            pinned.write_text(Path(relative), front)
     indexed = knowledge_mod.index_ticket_file(store, project, ticket, dest)
     out = {
         "path": indexed["path"],

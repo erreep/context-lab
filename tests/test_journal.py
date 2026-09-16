@@ -61,6 +61,15 @@ class JournalTests(unittest.TestCase):
             self.assertLessEqual(len(pick["title"]), 64)
             self.assertNotIn(" · ", pick["title"])
 
+    def test_journal_symlink_escape_blocked_before_write(self):
+        outside = self.root / "evil"
+        outside.mkdir()
+        (self.notes / "journal").symlink_to(outside)
+        with self.assertRaises(AgentError) as ctx:
+            journal(self.store, "app", "T-1", "plan", "Escape test", "Must not write outside notes.")
+        self.assertEqual(ctx.exception.code, "symlink_escape")
+        self.assertEqual(list(outside.glob("*.md")), [])
+
     def test_content_collision_uses_digest_suffix(self):
         journal(self.store, "app", "T-1", "decision", "Same title", "First body.")
         other = journal(self.store, "app", "T-1", "decision", "Same title", "Second body, different.")
