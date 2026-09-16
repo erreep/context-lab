@@ -1,4 +1,4 @@
-"""Worktree-scoped harness hooks: scope, ambient inject, session-start, commit lease."""
+"""Worktree-scoped harness hooks: scope, SessionStart standing recall, prompt identity, commit lease."""
 from __future__ import annotations
 
 import json
@@ -28,7 +28,6 @@ UNBORN_HEAD = "unborn"
 PRE_COMMIT_SCRIPT = """#!/bin/sh
 # Context Lab recall lease gate. Must run before formatters that rewrite the index.
 # lint-staged style rewrites need a fresh lease after they re-stage files.
-# Upgrade path toward remote verification: a Context-Lab-Run commit trailer.
 # Fails closed: a missing install blocks the commit with the fix below, never silently.
 CONTEXT_LAB_HOME={home}
 if command -v context-lab >/dev/null 2>&1; then
@@ -539,7 +538,6 @@ def install(client, project=None, ticket=None, db=None, git=True, force=False, c
     cwd = require_worktree(cwd)
     root = Path(cwd)
 
-    # Fail before writes when scope is missing.
     if project is not None:
         scope = set_scope(project, ticket or "", db=db, cwd=cwd)
     else:

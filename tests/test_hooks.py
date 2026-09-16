@@ -1,4 +1,3 @@
-"""Harness hooks: set-scope, inject, session-start."""
 import json
 import os
 import subprocess
@@ -119,7 +118,6 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("Context Lab contract", out["additionalContext"].split("\n\n", 1)[0])
 
     def test_gate_adapter_reads_command_and_cwd_from_payload(self):
-        # Run from a directory that is not a repo: only the payload can supply cwd and command.
         elsewhere = self.root / "elsewhere"
         elsewhere.mkdir()
         passthrough = _run_hook(elsewhere, "gate-git", {
