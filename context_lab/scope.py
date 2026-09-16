@@ -12,6 +12,7 @@ from typing import Literal
 
 from .engine import DEFAULT_DB
 from .schemas import AgentError
+from .sqlite_migrate import apply as apply_migrations
 
 BIND_HINT = "Run: context-lab scope bind --project P --ticket T"
 _NO_BINDING = frozenset({"not_a_worktree", "unbound_branch", "detached_head"})
@@ -150,6 +151,45 @@ class BoundRequest:
     database: Path | None
 
 
+def _branch_migration_v1(conn):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS repository_config (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          memory_db TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS branch_bindings (
+          branch_ref TEXT PRIMARY KEY,
+          project TEXT NOT NULL CHECK (trim(project) <> ''),
+          ticket TEXT NOT NULL CHECK (trim(ticket) <> ''),
+          updated_at TEXT NOT NULL
+        );
+    """)
+
+
+def _branch_migration_v2_allow_empty_ticket(conn):
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='branch_bindings'",
+    ).fetchone()
+    sql = row[0] if row else None
+    if sql and "trim(ticket)" in sql:
+        conn.executescript("""
+            CREATE TABLE branch_bindings_new (
+              branch_ref TEXT PRIMARY KEY,
+              project TEXT NOT NULL CHECK (trim(project) <> ''),
+              ticket TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            INSERT INTO branch_bindings_new
+              SELECT branch_ref, project, ticket, updated_at FROM branch_bindings;
+            DROP TABLE branch_bindings;
+            ALTER TABLE branch_bindings_new RENAME TO branch_bindings;
+        """)
+
+
+BRANCH_BINDING_MIGRATIONS = (_branch_migration_v1, _branch_migration_v2_allow_empty_ticket)
+BRANCH_BINDING_SCHEMA_VERSION = len(BRANCH_BINDING_MIGRATIONS)
+
+
 class BranchBindingRegistry:
     def __init__(self, git_common_dir: Path):
         self._git_common_dir = Path(git_common_dir)
@@ -157,41 +197,10 @@ class BranchBindingRegistry:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path))
         self._conn.row_factory = sqlite3.Row
-        self._ensure_schema()
+        apply_migrations(self._conn, list(BRANCH_BINDING_MIGRATIONS))
 
     def close(self):
         self._conn.close()
-
-    def _ensure_schema(self):
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS repository_config (
-              singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-              memory_db TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS branch_bindings (
-              branch_ref TEXT PRIMARY KEY,
-              project TEXT NOT NULL CHECK (trim(project) <> ''),
-              ticket TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            );
-        """)
-        sql = self._conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='branch_bindings'",
-        ).fetchone()[0]
-        if sql and "trim(ticket)" in sql:
-            self._conn.executescript("""
-                CREATE TABLE branch_bindings_new (
-                  branch_ref TEXT PRIMARY KEY,
-                  project TEXT NOT NULL CHECK (trim(project) <> ''),
-                  ticket TEXT NOT NULL,
-                  updated_at TEXT NOT NULL
-                );
-                INSERT INTO branch_bindings_new
-                  SELECT branch_ref, project, ticket, updated_at FROM branch_bindings;
-                DROP TABLE branch_bindings;
-                ALTER TABLE branch_bindings_new RENAME TO branch_bindings;
-            """)
-        self._conn.commit()
 
     def database(self) -> Path:
         row = self._conn.execute(
