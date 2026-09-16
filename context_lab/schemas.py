@@ -6,10 +6,11 @@ import math
 
 GATE_TEXT = """# Context Lab contract
 
-1. Commit: run `python3 -m context_lab hook recall-for --purpose commit` before `git commit` (lease = retrieval under bound git state, not comprehension).
-2. Soft clients: call `memory_context` with client `cwd` + `task` and optional `since` as the last `place`; do not poll `memory_scope` first. Claude/Codex standing inject is SessionStart only.
-3. Candidates never affect retrieval until confirmed in the local UI. Propose one sharp ticket-scoped claim per outcome (`title` + `claim` + `source_ids`).
-4. Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
+1. Scope: "this workspace" → `project` (memory space, not folder path); "work item" or "ticket" → `ticket`; repo/cwd ≠ `project`.
+2. Commit: run `python3 -m context_lab hook recall-for --purpose commit` before `git commit` (lease = retrieval under bound git state, not comprehension).
+3. Soft clients: call `memory_context` with client `cwd` + `task` and optional `since` as the last `place`; do not poll `memory_scope` first. Claude/Codex standing inject is SessionStart only.
+4. Candidates never affect retrieval until confirmed in the local UI. Propose one sharp ticket-scoped claim per outcome (`title` + `claim` + `source_ids`).
+5. Lab-wide writes (`project=__global__`) need explicit user approval and `confirm_global=true`.
 
 Setup is not recall. Client hooks are guardrails, not a security boundary.
 """
