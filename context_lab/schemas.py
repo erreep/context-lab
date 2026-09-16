@@ -168,6 +168,19 @@ def wire_estimated_tokens(obj_or_text):
     return math.ceil(len(text.encode("utf-8")) / 4)
 
 
+def with_wire_estimated_tokens(obj):
+    out = dict(obj)
+    estimate = 0
+    for _ in range(4):
+        out["wire_estimated_tokens"] = estimate
+        measured = wire_estimated_tokens(out)
+        if measured == estimate:
+            return out
+        estimate = measured
+    out["wire_estimated_tokens"] = estimate
+    return out
+
+
 def format_context(packet, detail="agent"):
     """Project a compile packet for the agent (compact) or inspect (trace) surface.
 
@@ -178,15 +191,7 @@ def format_context(packet, detail="agent"):
     out = {k: packet[k] for k in keys if k in packet and k != "picks"}
     # Selected ids/titles only. Never excluded/candidate titles on the agent wire.
     out["picks"] = [{"id": m["id"], "title": compact_record_title(m)} for m in packet.get("selected", [])]
-    n = 0
-    for _ in range(4):
-        text = wire_dumps({**out, "wire_estimated_tokens": n})
-        n2 = wire_estimated_tokens(text)
-        if n2 == n:
-            out["wire_estimated_tokens"] = n
-            return out, text
-        n = n2
-    out["wire_estimated_tokens"] = n
+    out = with_wire_estimated_tokens(out)
     return out, wire_dumps(out)
 
 

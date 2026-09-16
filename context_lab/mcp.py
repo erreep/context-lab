@@ -1,4 +1,3 @@
-"""Minimal MCP stdio server for Context Lab tools."""
 from __future__ import annotations
 
 import json
@@ -16,8 +15,8 @@ from .schemas import (
     TASK_SCHEMA,
     AgentError,
     error_payload,
+    with_wire_estimated_tokens,
     wire_dumps,
-    wire_estimated_tokens,
 )
 from .scope import (
     ROUTE_ONLY,
@@ -447,11 +446,7 @@ def _attach_compact_identity(view: dict, identity: SessionIdentity, since: str |
     elif since != current:
         out["place"] = current
         out["switch"] = switch_token(since, current)
-    estimate = 0
-    for _ in range(4):
-        estimate = wire_estimated_tokens({**out, "wire_estimated_tokens": estimate})
-    out["wire_estimated_tokens"] = estimate
-    return out
+    return with_wire_estimated_tokens(out)
 
 
 def _memory_scope(request: ActiveRequest) -> dict:

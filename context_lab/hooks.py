@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import agent_api, usage
 from .engine import DEFAULT_DB, ROOT
-from .schemas import AgentError, wire_dumps, wire_estimated_tokens
+from .schemas import AgentError, wire_dumps, with_wire_estimated_tokens
 from .scope import BoundIdentity, identity_at, place_token, switch_token
 from .store import Store
 
@@ -152,12 +152,10 @@ def _identity_fields(identity, since):
 
 
 def _with_identity(view, identity, since):
-    out = {**view, **_identity_fields(identity, since)}
-    estimate = 0
-    for _ in range(4):
-        estimate = wire_estimated_tokens({**out, "wire_estimated_tokens": estimate})
-    out["wire_estimated_tokens"] = estimate
-    return out
+    return with_wire_estimated_tokens({
+        **view,
+        **_identity_fields(identity, since),
+    })
 
 
 def _payload_identity(payload):
