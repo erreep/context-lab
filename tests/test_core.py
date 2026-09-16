@@ -181,8 +181,8 @@ class CoreTests(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"task": self.task("Change button color")}}},
-            {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "memory_source", "arguments": {"source_id": "src-shop", "project": "fieldnote"}}},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"cwd": "/tmp", "task": self.task("Change button color")}}},
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "memory_source", "arguments": {"cwd": "/tmp", "source_id": "src-shop", "project": "fieldnote"}}},
             {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "unknown"}}]
         out = io.StringIO()
         serve_mcp(self.store, io.StringIO("\n".join(map(json.dumps, msgs))), out)

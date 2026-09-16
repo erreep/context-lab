@@ -51,7 +51,7 @@ class InstallSmokeTests(unittest.TestCase):
 
             messages = [
                 {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"task": {"project": "fieldnote", "query": "Change button color", "as_of": "2026-09-12"}}}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"cwd": str(source), "task": {"project": "fieldnote", "query": "Change button color", "as_of": "2026-09-12"}}}},
             ]
             result = subprocess.run(
                 [str(executable), "--db", str(db), "mcp"],

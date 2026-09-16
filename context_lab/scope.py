@@ -134,6 +134,22 @@ class OutsideIdentity:
 SessionIdentity = BoundIdentity | UnboundIdentity | DetachedIdentity | OutsideIdentity
 
 
+@dataclass(frozen=True)
+class RouteOnly:
+    pass
+
+
+ROUTE_ONLY = RouteOnly()
+ScopeRequest = MemoryScope | None | RouteOnly
+
+
+@dataclass(frozen=True)
+class BoundRequest:
+    identity: SessionIdentity
+    scope: MemoryScope | None
+    database: Path | None
+
+
 class BranchBindingRegistry:
     def __init__(self, git_common_dir: Path):
         self._git_common_dir = Path(git_common_dir)
@@ -383,6 +399,68 @@ def switch_token(previous: str, current: str) -> str | None:
     if old and new:
         return f"project {old[0]}→{new[0]}"
     return f"place {previous}→{current}"
+
+
+def identity_to_inspect(identity: SessionIdentity) -> dict:
+    if isinstance(identity, OutsideIdentity):
+        return {
+            "status": identity.status,
+            "observed_cwd": str(identity.observed_cwd),
+            "reason": identity.reason,
+        }
+    out = {
+        "status": identity.status,
+        "worktree": str(identity.worktree),
+        "git_common_dir": str(identity.git_common_dir),
+    }
+    if isinstance(identity, DetachedIdentity):
+        return out
+    out["branch"] = identity.branch
+    if isinstance(identity, BoundIdentity):
+        out.update({
+            "project": identity.scope.project,
+            "ticket": identity.scope.ticket,
+            "database": str(identity.database),
+        })
+    return out
+
+
+def _bind_identity(identity: SessionIdentity, requested: ScopeRequest) -> BoundRequest:
+    database = identity.database if isinstance(identity, BoundIdentity) else None
+    if requested is ROUTE_ONLY:
+        return BoundRequest(identity=identity, scope=None, database=database)
+    if requested is None:
+        if not isinstance(identity, BoundIdentity):
+            raise AgentError(
+                "validation",
+                "project required when cwd has no bound scope",
+                field="project",
+            )
+        return BoundRequest(
+            identity=identity,
+            scope=identity.scope,
+            database=identity.database,
+        )
+    project = requested.project.strip()
+    ticket = requested.ticket.strip()
+    if not project:
+        raise AgentError("validation", "project required", field="project")
+    scope = MemoryScope(project=project, ticket=ticket)
+    if (
+        isinstance(identity, BoundIdentity)
+        and scope.project == identity.scope.project
+        and scope.ticket != identity.scope.ticket
+    ):
+        raise AgentError(
+            "scope_mismatch",
+            f"Request scope {scope.project}/{scope.ticket} does not match binding "
+            f"{identity.scope.project}/{identity.scope.ticket} on {identity.branch}",
+        )
+    return BoundRequest(identity=identity, scope=scope, database=database)
+
+
+def bind_request(cwd: str | Path, requested: ScopeRequest) -> BoundRequest:
+    return _bind_identity(identity_at(cwd), requested)
 
 
 class BranchScopes:

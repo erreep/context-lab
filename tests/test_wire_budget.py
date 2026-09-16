@@ -75,6 +75,7 @@ class WireBudgetTests(unittest.TestCase):
             "source_ids": ["src-1"], "need_tags": ["upload"],
         }])
         view = call(self.store, "memory_context", {
+            "cwd": self.temp.name,
             "task": {"project": "app", "ticket": "T-1", "query": "upload opération 日本語", "needs": ["upload"]},
             "budget": 1200,
         })

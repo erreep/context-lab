@@ -63,6 +63,7 @@ class ParkingTests(unittest.TestCase):
 
     def test_start_creates_candidate_and_replays_command(self):
         item = call(self.store, "memory_park", {
+            "cwd": self.temp.name,
             "project": PROJECT,
             "title": "Badge drift",
             "body": "Header counts only review rows.",
@@ -119,6 +120,7 @@ class ParkingTests(unittest.TestCase):
             )
         with self.assertRaises(AgentError):
             call(self.store, "memory_park", {
+                "cwd": self.temp.name,
                 "project": GLOBAL_PROJECT,
                 "title": "nope",
                 "body": "nope",
@@ -137,10 +139,11 @@ class ParkingTests(unittest.TestCase):
         git("commit", "-m", "init")
         BranchScopes.bind_current(
             str(repo), MemoryScope(PROJECT, TICKET),
-            database=str(Path(self.temp.name) / "bind.sqlite3"),
+            database=self.store.path,
         )
         os.chdir(repo)
         item = call(self.store, "memory_park", {
+            "cwd": str(repo),
             "project": PROJECT,
             "title": "Bound capture",
             "body": "while on T-1",
@@ -149,6 +152,7 @@ class ParkingTests(unittest.TestCase):
         self.assertEqual(shown["captured_while_ticket"], TICKET)
         with self.assertRaises(AgentError) as ctx:
             call(self.store, "memory_park", {
+                "cwd": str(repo),
                 "project": "other-app",
                 "title": "Wrong project",
                 "body": "should fail",

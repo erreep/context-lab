@@ -28,9 +28,15 @@ class UsageTests(unittest.TestCase):
 
     def exchange(self, calls):
         messages = [{"jsonrpc": "2.0", "id": 0, "method": "initialize"}]
-        messages += [{"jsonrpc": "2.0", "id": i, "method": "tools/call",
-                      "params": {"name": name, "arguments": args}}
-                     for i, (name, args) in enumerate(calls, 1)]
+        for i, (name, args) in enumerate(calls, 1):
+            if isinstance(args, dict) and name not in {"memory_catalog", "memory_allocate_ticket"}:
+                args = {"cwd": self.temp.name, **args}
+            messages.append({
+                "jsonrpc": "2.0",
+                "id": i,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": args},
+            })
         out = io.StringIO()
         serve_mcp(self.store, io.StringIO("\n".join(map(json.dumps, messages))), out)
         return [json.loads(line)["result"] for line in out.getvalue().splitlines()]
@@ -45,7 +51,10 @@ class UsageTests(unittest.TestCase):
         ])
         rows = list(self.store.db.execute("SELECT * FROM usage_events WHERE channel='mcp' ORDER BY id"))
         self.assertEqual(len(rows), 4)
-        expected_request = (len(wire_dumps({"name": "memory_observe", "arguments": args}).encode()) + 3) // 4
+        sent_args = {"cwd": self.temp.name, **args}
+        expected_request = (
+            len(wire_dumps({"name": "memory_observe", "arguments": sent_args}).encode()) + 3
+        ) // 4
         self.assertEqual(rows[0]["request_estimated_tokens"], expected_request)
         for row, response in zip(rows, results[1:]):
             text = response["content"][0]["text"]

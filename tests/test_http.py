@@ -106,7 +106,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_mcp_subprocess(self):
         messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}},
-                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"task": {"project": "fieldnote", "query": "Change button color", "as_of": "2026-09-12"}}}}]
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_context", "arguments": {"cwd": "/tmp", "task": {"project": "fieldnote", "query": "Change button color", "as_of": "2026-09-12"}}}}]
         result = subprocess.run([sys.executable, "-m", "context_lab", "--db", self.db_path, "mcp"],
                                 cwd=ROOT, input="\n".join(map(json.dumps, messages)) + "\n", capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)

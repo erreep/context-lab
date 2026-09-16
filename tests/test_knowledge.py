@@ -69,7 +69,7 @@ class KnowledgeTests(unittest.TestCase):
             for scope in ({"ticket": "T-999"}, {"ticket": ""}, {"project": "another"}):
                 self.assertEqual(compile_context(self.store, dict(task, **scope), strategy, persist=False)["selected"], [])
         with self.assertRaises(ValueError):
-            call(self.store, "memory_source", {"source_id": other["id"], "project": "course", "ticket": "T-123"})
+            call(self.store, "memory_source", {"cwd": self.temp.name, "source_id": other["id"], "project": "course", "ticket": "T-123"})
         sid = self.store.documents("course", "T-123")[0]["source_ids"][0]
         lesson = {"id": "lesson", "project": "course", "ticket": "T-123", "kind": "lesson",
                   "title": "Connection pooling", "claim": "Pool connections", "source_ids": [sid]}
@@ -77,7 +77,7 @@ class KnowledgeTests(unittest.TestCase):
             self.store.put_memories([dict(lesson, source_ids=[other["id"]])])
         with self.assertRaises(ValueError):
             self.store.put_memories([dict(lesson, depends_on=["other"])])
-        call(self.store, "memory_propose", {"memories": [lesson]})
+        call(self.store, "memory_propose", {"cwd": self.temp.name, "memories": [lesson]})
         self.assertEqual(self.store.memory("lesson")["status"], "candidate")
 
     def test_refresh_replaces_search_snapshot_and_failed_refresh_preserves_it(self):
@@ -120,7 +120,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["status"], "initialized")
         messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "memory_initiate",
-                     "arguments": {"project": "course", "ticket": "T-123"}}}]
+                     "arguments": {"cwd": self.temp.name, "project": "course", "ticket": "T-123"}}}]
         stream = io.StringIO()
         serve_mcp(self.store, io.StringIO("\n".join(map(json.dumps, messages))), stream)
         result = json.loads(stream.getvalue().splitlines()[-1])["result"]

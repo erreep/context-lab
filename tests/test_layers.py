@@ -67,7 +67,7 @@ class LayerTests(unittest.TestCase):
         source = self._confirmed(GLOBAL_PROJECT, "", "g2", "Rule", "standing rule",
                                  confirm_global=True, kind="standing_rule")
         got = call(self.store, "memory_source",
-                   {"source_id": source["id"], "project": "course", "ticket": "T-1"})
+                   {"cwd": self.temp.name, "source_id": source["id"], "project": "course", "ticket": "T-1"})
         self.assertEqual(got["id"], source["id"])
 
     def test_standing_rules_always_included_even_without_lexical_hit(self):
