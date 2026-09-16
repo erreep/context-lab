@@ -118,6 +118,31 @@ class WireBudgetTests(unittest.TestCase):
             "SELECT id FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()[0])
         self.assertLessEqual(view["wire_estimated_tokens"], 500)
 
+    def test_agent_picks_match_saved_selected_after_shrink(self):
+        """Rec 2: after agent_api.context shrink loop, wire picks == saved selected ids."""
+        for i in range(4, 12):
+            self.store.put_memories([{
+                "id": f"M-extra-{i}", "project": "app", "ticket": "T-1", "kind": "lesson",
+                "status": "confirmed",
+                "title": f"Extra padding lesson {i} " + ("y" * 50),
+                "claim": ("Upload retries preserve operation identity. " * 15) + f"extra={i}",
+                "rationale": "More ticket evidence " * 25,
+                "source_ids": ["src-1"], "need_tags": ["upload"],
+            }])
+        view = context(self.store, {
+            "project": "app", "ticket": "T-1",
+            "query": "upload retry constraints please implement carefully",
+            "needs": ["upload"],
+        }, budget=500)
+        saved = self.store.run(view["run_id"])
+        self.assertEqual(
+            {p["id"] for p in view["picks"]},
+            {m["id"] for m in saved["selected"]},
+        )
+        self.assertLessEqual(view["wire_estimated_tokens"], 500)
+        self.assertNotIn("selected", view)
+        self.assertNotIn("budget_excluded", view)
+
 
 if __name__ == "__main__":
     unittest.main()

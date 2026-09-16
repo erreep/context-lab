@@ -140,6 +140,32 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(statuses.count("already_initialized"), 2)
         self.assertEqual(len(self.store.sources()), 1)
 
+    def test_document_admit_sets_injection_guarded(self):
+        initiate(self.store, "course", "T-123", str(self.notes))
+        src = self.store.add_source({
+            "project": "__global__", "ticket": "", "confirm_global": True,
+            "title": "Lab rule", "body": "Always run tests before merge.",
+        })
+        self.store.put_memories([{
+            "id": "global-standing", "project": "__global__", "ticket": "",
+            "kind": "standing_rule", "status": "confirmed", "confirm_global": True,
+            "title": "Test standing", "claim": src["body"], "source_ids": [src["id"]],
+            "valid_from": "2026-01-01",
+        }])
+        packet = compile_context(self.store, {
+            "project": "course", "ticket": "T-123",
+            "query": "PostgreSQL connection pooling",
+        }, persist=False)
+        doc_ids = {d["id"] for d in self.store.documents("course", "T-123")}
+        selected_docs = [
+            t for t in packet["trace"]
+            if t["id"] in doc_ids and t.get("stage") == "selected"
+        ]
+        self.assertTrue(selected_docs)
+        self.assertTrue(any(t.get("injection_guarded") is True for t in selected_docs))
+        standing = next(t for t in packet["trace"] if t["id"] == "global-standing")
+        self.assertNotIn("injection_guarded", standing)
+
     def test_legacy_database_migration_preserves_source(self):
         legacy = str(self.root / "legacy.sqlite3")
         with sqlite3.connect(legacy) as db:

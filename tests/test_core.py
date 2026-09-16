@@ -154,6 +154,17 @@ class CoreTests(unittest.TestCase):
         p = compile_context(self.store, {"project": "custom", "query": "Take this to the next room", "actions": ["transport"], "needs": ["seal_status"]}, persist=False)
         self.assertEqual(self.ids(p), {"custom-rule"})
 
+    def test_compile_context_never_reads_feedback(self):
+        """Rec 5: recall must not consult feedback table (human-facing only)."""
+        task = self.task("Change button color")
+        p1 = compile_context(self.store, task, persist=True)
+        self.store.log_feedback(p1["run_id"], "C-brand", "missed", "ignored")
+
+        with patch.object(self.store, "feedback", side_effect=AssertionError("retrieval read feedback")):
+            p2 = compile_context(self.store, task, persist=False)
+
+        self.assertEqual(self.ids(p1), self.ids(p2))
+
     def test_feedback_uses_run_snapshot(self):
         p = compile_context(self.store, self.task(state={"http_method": "POST", "idempotency_verified": False}))
         f = self.store.log_feedback(p["run_id"], "L-operation", "missed", "Agent ignored it")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from datetime import date, datetime, timezone
@@ -13,6 +14,32 @@ KINDS = {"fact", "constraint", "decision", "event", "lesson", "standing_rule"}
 STATUSES = {"candidate", "confirmed", "retracted"}
 # Reserved project for sparse lab-wide standing rules that apply to every project.
 GLOBAL_PROJECT = "__global__"
+
+_OBVIOUS_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("bearer_token", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}\b")),
+    ("openai_token", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("github_token", re.compile(r"\bgh[pousr]_[a-zA-Z0-9]{20,}\b")),
+    ("github_token", re.compile(r"\bgithub_pat_[a-zA-Z0-9_]{20,}\b")),
+    ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    (
+        "assigned_secret",
+        re.compile(
+            r"""(?ix)
+            \b(?:api[_-]?key|token|secret)
+            \s*[:=]\s*['"]?(?!redacted\b|example\b|placeholder\b)
+            [^'"\s]{20,}
+            """
+        ),
+    ),
+)
+
+
+def obvious_secret_kind(body: str) -> str | None:
+    """Return the first stable kind label if body embeds an obvious token-shaped secret."""
+    if not isinstance(body, str):
+        return None
+    return next((kind for kind, pattern in _OBVIOUS_SECRET_PATTERNS if pattern.search(body)), None)
 
 
 def now():
@@ -194,6 +221,11 @@ class Store:
             raise ValueError("Lab-wide evidence cannot carry a ticket")
         if s["project"] == GLOBAL_PROJECT and not s.pop("confirm_global", False):
             raise ValueError("Lab-wide evidence requires confirm_global=true after explicit user approval")
+        kind = obvious_secret_kind(s.get("body", ""))
+        if kind:
+            raise ValueError(
+                f"Source body appears to contain a secret ({kind}); redact it before observing"
+            )
         s.setdefault("id", new_id("src"))
         s.setdefault("created_at", now())
         s["sha256"] = hashlib.sha256(s["body"].encode()).hexdigest()
