@@ -5,7 +5,7 @@ from .engine import DATA_ROOT, STRATEGIES, catalog, compile_context, plan_task
 from .evaluate import evaluate
 from .provider import ModelEndpoint
 from .knowledge import allocate_ticket, initiate
-from .schemas import review_tier
+from .schemas import AgentError, DETAIL_LEVELS, format_context, review_tier, wire_estimated_tokens
 from .store import GLOBAL_PROJECT, scope_key, scope_layers
 
 
@@ -33,6 +33,39 @@ def provider_flags(store, options=None):
             "embeddings": model if want_embeddings else None}
 
 
+def recall_context(store, task, budget=1200, detail="agent", strategy="targeted", options=None):
+    """Canonical recall: plan once, shrink compact wire, save one run, project output."""
+    if detail not in DETAIL_LEVELS:
+        raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
+    compact = detail in {"agent", "prose"}
+    flags = provider_flags(store, options)
+    planned = plan_task(task, planner=flags["planner"])
+    select_budget = budget
+    packet, wire_text = None, ""
+    for _ in range(12):
+        packet = compile_context(
+            store, planned, strategy=strategy, budget=select_budget,
+            embeddings=flags["embeddings"], planner=None, persist=False,
+            planning_metadata=planned.get("planning"),
+        )
+        view, wire_text = format_context(packet, detail)
+        if not compact or wire_estimated_tokens(wire_text) <= budget:
+            break
+        if select_budget <= 128:
+            break
+        select_budget = max(128, int(select_budget * 0.85))
+    if compact and wire_estimated_tokens(wire_text) > budget:
+        raise AgentError(
+            "wire_budget_exceeded",
+            "Compact response exceeds budget; shorten the task or raise budget",
+            field="budget",
+            hint="Use memory_inspect_run for traces; do not widen the agent wire",
+        )
+    packet = store.save_run(packet)
+    view, _ = format_context(packet, detail)
+    return view
+
+
 def compare(store, payload):
     flags = provider_flags(store, payload)
     task = plan_task(payload.get("task", {}), planner=flags["planner"])
@@ -47,8 +80,14 @@ def dispatch(store, operation, payload):
     if operation == "compare":
         return compare(store, payload)
     if operation == "context":
-        return compile_context(store, payload.get("task", {}), payload.get("strategy", "targeted"),
-                               payload.get("budget", 1200), **provider_flags(store, payload))
+        return recall_context(
+            store,
+            payload.get("task", {}),
+            budget=payload.get("budget", 1200),
+            detail=payload.get("detail", "inspect"),
+            strategy=payload.get("strategy", "targeted"),
+            options=payload,
+        )
     if operation == "benchmark":
         return evaluate(store, DATA_ROOT / "scenarios.json", payload.get("budget", 1200), **provider_flags(store, payload))
     if operation == "source":
