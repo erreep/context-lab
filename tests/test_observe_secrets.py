@@ -72,6 +72,7 @@ class ObserveSecretTests(unittest.TestCase):
     def test_mcp_observe_raises_same_as_store(self):
         with self.assertRaisesRegex(ValueError, r"secret \(openai_token\)"):
             call(self.store, "memory_observe", {
+                "cwd": "/tmp",
                 "project": "app", "ticket": "T-1",
                 "title": "Leak", "body": "sk-" + "a" * 24,
             })
