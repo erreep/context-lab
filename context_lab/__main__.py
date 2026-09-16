@@ -65,6 +65,21 @@ def main():
     from .scope import build_parser as build_scope_parser, dispatch as dispatch_scope
     build_hook_parser(sub)
     build_scope_parser(sub)
+    park = sub.add_parser("parking", help="Later parking lot triage")
+    park_sub = park.add_subparsers(dest="parking_command", required=True)
+    park_list = park_sub.add_parser("list", help="List parked items for a project")
+    park_list.add_argument("--project", required=True)
+    park_show = park_sub.add_parser("show", help="Show one parked item")
+    park_show.add_argument("park_id")
+    park_start = park_sub.add_parser("start", help="Start a parked item on a ticket")
+    park_start.add_argument("park_id")
+    dest = park_start.add_mutually_exclusive_group(required=True)
+    dest.add_argument("--new-ticket", action="store_true")
+    dest.add_argument("--ticket")
+    park_start.add_argument("--command-id", default=None)
+    park_dismiss = park_sub.add_parser("dismiss", help="Dismiss a parked item")
+    park_dismiss.add_argument("park_id")
+    park_dismiss.add_argument("--command-id", default=None)
     inst = sub.add_parser("install", help="One-shot local opt-in: MCP + client hooks + git lease (alias of hook install)")
     inst.add_argument("--client", required=True, choices=["claude", "codex", "cursor"])
     inst.add_argument("--project", default=None)
@@ -131,6 +146,32 @@ def main():
         )
         print(format_outcome(outcome))
         return outcome.exit_code
+    if args.command == "parking":
+        import uuid
+        from .parking import ExistingTicket, NewTicket, ParkingLot, ParkingError
+        store = Store(args.db)
+        try:
+            lot = ParkingLot(store)
+            if args.parking_command == "list":
+                items = lot.list(project=args.project, state="parked")
+                print(json.dumps({"items": items}, indent=2))
+                return 0
+            if args.parking_command == "show":
+                print(json.dumps(lot.get(args.park_id), indent=2))
+                return 0
+            command_id = args.command_id or ("cmd-" + uuid.uuid4().hex[:16])
+            if args.parking_command == "start":
+                dest = NewTicket() if args.new_ticket else ExistingTicket(args.ticket)
+                print(json.dumps(lot.start(args.park_id, dest, command_id=command_id), indent=2))
+                return 0
+            if args.parking_command == "dismiss":
+                print(json.dumps(lot.dismiss(args.park_id, command_id=command_id), indent=2))
+                return 0
+        except ParkingError as e:
+            print("Error: " + str(e), file=sys.stderr)
+            return 1
+        finally:
+            store.close()
     store = Store(args.db)
     try:
         if args.command == "demo":

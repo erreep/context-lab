@@ -155,6 +155,25 @@ class Store:
           CREATE TABLE IF NOT EXISTS knowledge_bases (
             project TEXT NOT NULL, ticket TEXT NOT NULL, payload TEXT NOT NULL,
             PRIMARY KEY(project, ticket));
+          CREATE TABLE IF NOT EXISTS parked_items (
+            id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+            body TEXT NOT NULL, later TEXT NOT NULL DEFAULT '',
+            captured_by TEXT NOT NULL, captured_while_ticket TEXT NOT NULL DEFAULT '',
+            capture_key TEXT NOT NULL, created_at TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('parked', 'started', 'dismissed')),
+            destination_ticket TEXT, source_id TEXT, candidate_id TEXT, decided_at TEXT,
+            UNIQUE (project, captured_by, capture_key),
+            CHECK (
+              (state = 'started' AND destination_ticket IS NOT NULL AND source_id IS NOT NULL AND candidate_id IS NOT NULL)
+              OR (state != 'started' AND destination_ticket IS NULL AND source_id IS NULL AND candidate_id IS NULL)
+            ));
+          CREATE INDEX IF NOT EXISTS parked_inbox
+            ON parked_items(project, state, created_at, id);
+          CREATE TABLE IF NOT EXISTS parking_commands (
+            command_id TEXT PRIMARY KEY, item_id TEXT NOT NULL,
+            operation TEXT NOT NULL CHECK (operation IN ('start', 'dismiss')),
+            request_fingerprint TEXT NOT NULL, result TEXT NOT NULL,
+            created_at TEXT NOT NULL);
         """)
         # Existing stores predate ticket scope; their records remain project-only.
         with self.db:
@@ -539,9 +558,12 @@ class Store:
         return [json.loads(r[0]) for r in self.db.execute("SELECT payload FROM feedback ORDER BY created_at DESC")]
 
     def export(self):
+        parked = [dict(r) for r in self.db.execute("SELECT * FROM parked_items ORDER BY project, created_at, id")]
+        commands = [dict(r) for r in self.db.execute("SELECT * FROM parking_commands ORDER BY created_at, command_id")]
         return {"schema_version": 2, "sources": self.sources(), "memories": self.memories(),
                 "knowledge_bases": [json.loads(r[0]) for r in self.db.execute("SELECT payload FROM knowledge_bases ORDER BY project,ticket")],
-                "revisions": {m["id"]: self.revisions(m["id"]) for m in self.memories()}, "feedback": self.feedback()}
+                "revisions": {m["id"]: self.revisions(m["id"]) for m in self.memories()}, "feedback": self.feedback(),
+                "parked_items": parked, "parking_commands": commands}
 
     def seed(self, filename):
         payload = json.loads(Path(filename).read_text())
@@ -552,3 +574,178 @@ class Store:
         if fresh:
             self.put_memories(fresh)
         return {"added": len(fresh), "total": len(self.memories())}
+
+    def _parking_find_capture(self, project, captured_by, capture_key):
+        row = self.db.execute(
+            "SELECT * FROM parked_items WHERE project=? AND captured_by=? AND capture_key=?",
+            (project, captured_by, capture_key),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def _parking_insert(self, row):
+        with self.db:
+            self.db.execute(
+                """INSERT INTO parked_items
+                   (id, project, title, body, later, captured_by, captured_while_ticket,
+                    capture_key, created_at, state)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                tuple(row[k] for k in (
+                    "id", "project", "title", "body", "later", "captured_by",
+                    "captured_while_ticket", "capture_key", "created_at", "state")),
+            )
+
+    def _parking_get(self, item_id):
+        row = self.db.execute("SELECT * FROM parked_items WHERE id=?", (item_id,)).fetchone()
+        return dict(row) if row else None
+
+    def _parking_list(self, project, state="parked", limit=50):
+        rows = self.db.execute(
+            """SELECT * FROM parked_items WHERE project=? AND state=?
+               ORDER BY created_at, id LIMIT ?""",
+            (project, state, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _parking_count(self, project, state="parked"):
+        if not project:
+            return 0
+        row = self.db.execute(
+            "SELECT COUNT(*) FROM parked_items WHERE project=? AND state=?",
+            (project, state),
+        ).fetchone()
+        return row[0]
+
+    def _parking_command_replay(self, command_id, item_id, operation, fingerprint):
+        row = self.db.execute(
+            "SELECT item_id, operation, request_fingerprint, result FROM parking_commands WHERE command_id=?",
+            (command_id,),
+        ).fetchone()
+        if not row:
+            return None
+        if row["item_id"] != item_id or row["operation"] != operation:
+            raise ValueError("command_id already used for a different parking operation")
+        if row["request_fingerprint"] != fingerprint:
+            raise ValueError("command_id replay fingerprint mismatch")
+        return row["result"]
+
+    def _parking_start_transaction(self, row, *, new_ticket, dest_ticket, command_id, fingerprint, reviewer):
+        from .knowledge import allocate_ticket
+
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            fresh = self.db.execute(
+                "SELECT state FROM parked_items WHERE id=?", (row["id"],),
+            ).fetchone()
+            if not fresh or fresh[0] != "parked":
+                raise ValueError(f"Item is {fresh[0] if fresh else 'missing'}, not parked")
+            ticket = dest_ticket
+            if new_ticket:
+                ticket = allocate_ticket()
+            elif not ticket:
+                raise ValueError("destination ticket required")
+            key = hashlib.sha256(f"{row['id']}|{ticket}".encode()).hexdigest()[:12]
+            source_id, candidate_id = f"src-park-{key}", f"mem-park-{key}"
+            source_body = (
+                f"Parked for later (from {row['project']}"
+                f"{('/' + row['captured_while_ticket']) if row['captured_while_ticket'] else ''}).\n\n"
+                f"title: {row['title']}\n"
+                f"later: {row['later']}\n\n"
+                f"{row['body']}\n"
+            )
+            claim = row["title"].strip()
+            if row["body"].strip() and row["body"].strip() not in claim:
+                claim = claim + ". " + row["body"].strip()[:240]
+            source = {
+                "id": source_id,
+                "project": row["project"],
+                "ticket": ticket,
+                "title": "Parked: " + row["title"],
+                "body": source_body,
+                "created_at": now(),
+            }
+            source["sha256"] = hashlib.sha256(source["body"].encode()).hexdigest()
+            old_src = self.source(source_id)
+            if old_src:
+                if any(old_src[k] != source[k] for k in ("project", "ticket", "title", "body")):
+                    raise ValueError("Sources are immutable; parking materialization conflict")
+            else:
+                self.db.execute(
+                    "INSERT INTO sources (id,project,title,body,created_at,sha256,ticket) VALUES (?,?,?,?,?,?,?)",
+                    tuple(source[k] for k in ("id", "project", "title", "body", "created_at", "sha256", "ticket")),
+                )
+            candidate = {
+                "id": candidate_id,
+                "project": row["project"],
+                "ticket": ticket,
+                "kind": "event",
+                "status": "candidate",
+                "title": row["title"],
+                "claim": claim,
+                "source_ids": [source_id],
+                "rationale": row["later"] or "Started from Later parking lot",
+            }
+            validated = validate_memory(candidate)
+            existing = self.memory(candidate_id)
+            if existing:
+                if scope_key(existing) != scope_key(validated):
+                    raise ValueError("Parking candidate ID collision across scopes")
+            else:
+                timestamp = now()
+                self.db.execute(
+                    "INSERT INTO memories VALUES (?,?,?,?)",
+                    (validated["id"], 1, timestamp, json.dumps(validated)),
+                )
+            decided = now()
+            self.db.execute(
+                """UPDATE parked_items SET state='started', destination_ticket=?, source_id=?,
+                   candidate_id=?, decided_at=? WHERE id=? AND state='parked'""",
+                (ticket, source_id, candidate_id, decided, row["id"]),
+            )
+            if self.db.execute("SELECT changes()").fetchone()[0] != 1:
+                raise ValueError("Parking start lost a race")
+            result = {
+                "item_id": row["id"],
+                "destination_ticket": ticket,
+                "source_id": source_id,
+                "candidate_id": candidate_id,
+                "reviewer": reviewer,
+            }
+            self.db.execute(
+                "INSERT INTO parking_commands VALUES (?,?,?,?,?,?)",
+                (command_id, row["id"], "start", fingerprint, json.dumps(result), decided),
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return result
+
+    def _parking_dismiss_transaction(self, row, *, command_id, fingerprint, reviewer):
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            fresh = self.db.execute(
+                "SELECT state FROM parked_items WHERE id=?", (row["id"],),
+            ).fetchone()
+            if not fresh:
+                raise ValueError("Unknown parked item")
+            if fresh[0] == "dismissed":
+                current = self._parking_get(row["id"])
+                self.db.commit()
+                return current
+            if fresh[0] != "parked":
+                raise ValueError(f"Item is {fresh[0]}, not parked")
+            decided = now()
+            self.db.execute(
+                "UPDATE parked_items SET state='dismissed', decided_at=? WHERE id=? AND state='parked'",
+                (decided, row["id"]),
+            )
+            updated = self._parking_get(row["id"])
+            self.db.execute(
+                "INSERT INTO parking_commands VALUES (?,?,?,?,?,?)",
+                (command_id, row["id"], "dismiss", fingerprint, json.dumps(updated), decided),
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return updated

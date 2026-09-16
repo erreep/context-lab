@@ -13,6 +13,7 @@ from .engine import DEFAULT_DB
 from .schemas import AgentError
 
 BIND_HINT = "Run: context-lab scope bind --project P --ticket T"
+_NO_BINDING = frozenset({"not_a_worktree", "unbound_branch", "detached_head"})
 
 
 def _git(args, cwd=None, check=True):
@@ -354,6 +355,16 @@ class BranchScopes:
             return reg.list_bindings()
         finally:
             reg.close()
+
+
+def try_current_scope(cwd=None):
+    try:
+        return BranchScopes.resolve_current(cwd)
+    except AgentError as e:
+        if e.code in _NO_BINDING:
+            return None
+        raise
+
 
 
 def build_parser(sub):

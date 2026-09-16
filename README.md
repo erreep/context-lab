@@ -125,7 +125,7 @@ Runtime source: MCP `initialize.instructions` (`GATE_TEXT`).
 
 1. Before `git commit`, run `context-lab hook recall-for --purpose commit`.
 2. Soft clients (Cursor: no ambient inject) call `memory_context` after scope bind and before history-dependent work. Ambient clients (Claude/Codex) already inject standing context.
-3. Candidates stay inert until confirmed in the workbench. Propose one sharp ticket-scoped `title`+`claim`+`source_ids` per outcome.
+3. Candidates stay inert until confirmed in the workbench. Propose one sharp ticket-scoped `title`+`claim`+`source_ids` per outcome. Unrelated later-fixes use `memory_park`, not propose/journal/baseline.
 4. Lab-wide writes need explicit user approval and `confirm_global=true`.
 
 Setup is not recall.
@@ -159,6 +159,7 @@ Suggested instruction block for agent prompts:
 | `memory_feedback` | Report helpful/missed/irrelevant/stale and diagnose pipeline stage |
 | `memory_promote` | Promote a confirmed ticket memory to a project-baseline candidate |
 | `memory_journal` | Write and immediately index a durable ticket journal entry |
+| `memory_park` | Park an unrelated later-fix for human triage; excluded from recall and the confirm inbox |
 
 ### Agent recall vs evaluation
 
@@ -205,6 +206,10 @@ Confirm waiting items in the localhost UI. That is the default human surface. La
 The desk is a human review surface, not CompactView: title and claim first, technical fields under an advanced section. Confirmation records a review decision. It does not prove a claim true. Only confirmed records enter targeted recall (plus indexed document excerpts as reference text).
 
 Candidates sort by blast radius. **One by one** (lab-wide, project baseline, constraints, standing rules) is one-at-a-time. **Batch OK** (ticket-scoped facts, events, decisions, lessons) can be multi-confirmed from the batch bar. Keyboard: `j`/`k` move, `a` confirm, `x` retract, `space` select batch-tier rows. Prefer one sharp ticket-scoped candidate per observed outcome; title and claim should stand alone without JSON chrome.
+
+### Later (parking lot)
+
+While bound to a ticket, agents can park unrelated fixes with `memory_park` (project-only; no ticket argument). Parked bodies never enter recall or the confirm inbox. The workbench header shows **Later (N)** beside the waiting badge; open it to start a parked item on a new or existing ticket (which writes one unconfirmed candidate there) or dismiss it. Human triage also works through `context-lab parking list|show|start|dismiss`.
 
 ### Agent preview
 

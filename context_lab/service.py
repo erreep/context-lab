@@ -55,6 +55,22 @@ def dispatch(store, operation, payload):
         return {"ticket": allocate_ticket()}
     if operation == "promote":
         return store.promote(payload.get("memory_id"), title=payload.get("title"), claim=payload.get("claim"))
+    if operation == "parking-list":
+        from .parking import ParkingLot
+        return {"items": ParkingLot(store).list(project=payload["project"], state=payload.get("state", "parked"))}
+    if operation == "parking-start":
+        from .parking import ExistingTicket, NewTicket, ParkingLot
+        lot = ParkingLot(store)
+        if payload.get("new_ticket"):
+            dest = NewTicket()
+        elif payload.get("ticket"):
+            dest = ExistingTicket(payload["ticket"])
+        else:
+            raise ValueError("parking-start requires new_ticket or ticket")
+        return lot.start(payload["park_id"], dest, command_id=payload["command_id"])
+    if operation == "parking-dismiss":
+        from .parking import ParkingLot
+        return ParkingLot(store).dismiss(payload["park_id"], command_id=payload["command_id"])
     raise ValueError("Unknown operation")
 
 
@@ -67,6 +83,7 @@ def scopes(store):
 
 
 def info(store, project=None, ticket=None):
+    from .parking import ParkingLot
     from .review import inbox_state
     bases = store.knowledge_bases()
     scope_rows = store.list_scope_rows()
@@ -96,6 +113,8 @@ def info(store, project=None, ticket=None):
                                if isinstance(f.get("task"), dict) and scope_key(f["task"]) == key]
         payload["scope"] = next((r for r in scope_rows if r["project"] == project and r["ticket"] == ticket), None)
         payload["inbox"] = inbox_state(store, project, ticket)
+        lot = ParkingLot(store)
+        payload["later"] = {"count": lot.count(project), "items": lot.list(project=project, state="parked")}
     else:
         payload["memories"] = store.memories()
         payload["sources"] = store.sources()

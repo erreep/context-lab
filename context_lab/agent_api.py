@@ -248,6 +248,38 @@ def journal(store, project, ticket, kind, title, body):
     return out
 
 
+def park(store, args):
+    from .parking import ParkingLot, compact_item, triage_command
+
+    if not isinstance(args, dict):
+        raise AgentError("validation", "arguments must be an object")
+    project = args.get("project", "")
+    title = args.get("title", "")
+    body = args.get("body", "")
+    later = args.get("later", "")
+    capture_key = args.get("capture_key")
+    captured_while = _captured_while_ticket()
+    try:
+        item = ParkingLot(store).capture(
+            project=project,
+            title=title,
+            body=body,
+            later=later,
+            captured_by="mcp-local",
+            captured_while_ticket=captured_while,
+            capture_key=capture_key,
+        )
+    except ValueError as e:
+        raise AgentError("validation", str(e), field="project") from e
+    return {"item": compact_item(item), "triage": triage_command(item["project"])}
+
+
+def _captured_while_ticket():
+    from .scope import try_current_scope
+    resolved = try_current_scope()
+    return "" if resolved is None else resolved.scope.ticket
+
+
 def allocate_ticket():
     return {"ticket": knowledge_mod.allocate_ticket()}
 
