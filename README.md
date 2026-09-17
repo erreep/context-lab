@@ -444,7 +444,7 @@ Restart/reconnect existing MCP processes after updating. Hook injections also re
 | `context-lab mcp` | Start the stdio MCP server |
 | `context-lab initiate …` | Ticket knowledge-base setup (`--vault` / `--no-vault`, `--path`, `--empty`, `--refresh`) |
 | `context-lab allocate-ticket` | Mint a generated ticket id |
-| `context-lab context --task …` | Build a context packet |
+| `context-lab context --task … [--strategy …] [--budget …] [--text] [--embeddings] [--model-planner]` | Build a context packet |
 | `context-lab import …` / `export …` | JSON batch IO |
 | `context-lab draft --source …` | Model-assisted candidate draft |
 | `context-lab benchmark …` | Run the comparison suite |

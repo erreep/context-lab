@@ -105,18 +105,18 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
         auto_detected=auto_detected)
 
 
-def context(store, task, budget=1200, detail="agent"):
+def context(store, task, budget=1200, detail="agent", strategy="targeted", embeddings=None, model_planner=None):
     if detail not in DETAIL_LEVELS:
         raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
     compact = detail in {"agent", "prose"}
-    flags = provider_flags(store)
+    flags = provider_flags(store, {"embeddings": embeddings, "model_planner": model_planner})
     # Plan once. Shrink packs the same planned task; only the final packet is saved.
     planned = plan_task(task, planner=flags["planner"])
     select_budget = budget
     packet, view, wire_text = None, None, ""
     for _ in range(12):
         packet = compile_context(
-            store, planned, budget=select_budget,
+            store, planned, strategy=strategy, budget=select_budget,
             embeddings=flags["embeddings"], planner=None, persist=False,
             planning_metadata=planned.get("planning"),
         )

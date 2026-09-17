@@ -231,7 +231,14 @@ def main():
         elif args.command == "context":
             from .agent_api import context as build_context
             task = json.loads(Path(args.task).read_text())
-            view = build_context(store, task, budget=args.budget)
+            view = build_context(
+                store,
+                task,
+                budget=args.budget,
+                strategy=args.strategy,
+                embeddings=True if args.embeddings else None,
+                model_planner=True if args.model_planner else None,
+            )
             print(view["context"] if args.text else json.dumps(view, indent=2))
         else:
             adapter = ModelEndpoint(store) if args.embeddings or args.model_planner else None
