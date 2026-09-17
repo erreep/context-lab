@@ -9,6 +9,8 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from .sqlite_migrate import apply as apply_migrations
+
 
 KINDS = {"fact", "constraint", "decision", "event", "lesson", "standing_rule"}
 STATUSES = {"candidate", "confirmed", "retracted"}
@@ -152,6 +154,132 @@ def validate_memory(raw):
     return m
 
 
+def _store_migration_v1(conn):
+    conn.executescript("""
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+        body TEXT NOT NULL, created_at TEXT NOT NULL, sha256 TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT NOT NULL, version INTEGER NOT NULL, recorded_at TEXT NOT NULL,
+        payload TEXT NOT NULL, PRIMARY KEY(id, version));
+      CREATE TABLE IF NOT EXISTS runs (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS usage_events (
+        id INTEGER PRIMARY KEY, created_at TEXT NOT NULL,
+        project TEXT, ticket TEXT, channel TEXT NOT NULL, operation TEXT NOT NULL,
+        request_estimated_tokens INTEGER NOT NULL, response_estimated_tokens INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS usage_scope ON usage_events(project, ticket);
+      CREATE TABLE IF NOT EXISTS feedback (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS embeddings (
+        key TEXT PRIMARY KEY, vector TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS knowledge_bases (
+        project TEXT NOT NULL, ticket TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY(project, ticket));
+      CREATE TABLE IF NOT EXISTS parked_items (
+        id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+        body TEXT NOT NULL, later TEXT NOT NULL DEFAULT '',
+        captured_by TEXT NOT NULL, captured_while_ticket TEXT NOT NULL DEFAULT '',
+        capture_key TEXT NOT NULL, created_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('parked', 'started', 'dismissed')),
+        destination_ticket TEXT, source_id TEXT, candidate_id TEXT, decided_at TEXT,
+        UNIQUE (project, captured_by, capture_key),
+        CHECK (
+          (state = 'started' AND destination_ticket IS NOT NULL AND source_id IS NOT NULL AND candidate_id IS NOT NULL)
+          OR (state != 'started' AND destination_ticket IS NULL AND source_id IS NULL AND candidate_id IS NULL)
+        ));
+      CREATE INDEX IF NOT EXISTS parked_inbox
+        ON parked_items(project, state, created_at, id);
+      CREATE TABLE IF NOT EXISTS parking_commands (
+        command_id TEXT PRIMARY KEY, item_id TEXT NOT NULL,
+        operation TEXT NOT NULL CHECK (operation IN ('start', 'dismiss')),
+        request_fingerprint TEXT NOT NULL, result TEXT NOT NULL,
+        created_at TEXT NOT NULL);
+    """)
+
+
+def _store_migration_v2_sources_ticket(conn):
+    if "ticket" not in {r[1] for r in conn.execute("PRAGMA table_info(sources)")}:
+        conn.execute("ALTER TABLE sources ADD COLUMN ticket TEXT NOT NULL DEFAULT ''")
+
+
+def _store_migration_v3_journal_reservations(conn):
+    conn.executescript("""
+      CREATE TABLE IF NOT EXISTS journal_reservations (
+        project TEXT NOT NULL,
+        ticket TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (project, ticket, kind, slug, digest));
+    """)
+
+
+def _store_ensure_tables(conn):
+    """Idempotent create for the current table set (repairs dropped tables on reopen)."""
+    conn.executescript("""
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+        body TEXT NOT NULL, created_at TEXT NOT NULL, sha256 TEXT NOT NULL,
+        ticket TEXT NOT NULL DEFAULT '');
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT NOT NULL, version INTEGER NOT NULL, recorded_at TEXT NOT NULL,
+        payload TEXT NOT NULL, PRIMARY KEY(id, version));
+      CREATE TABLE IF NOT EXISTS runs (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS usage_events (
+        id INTEGER PRIMARY KEY, created_at TEXT NOT NULL,
+        project TEXT, ticket TEXT, channel TEXT NOT NULL, operation TEXT NOT NULL,
+        request_estimated_tokens INTEGER NOT NULL, response_estimated_tokens INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS usage_scope ON usage_events(project, ticket);
+      CREATE TABLE IF NOT EXISTS feedback (
+        id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS embeddings (
+        key TEXT PRIMARY KEY, vector TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS knowledge_bases (
+        project TEXT NOT NULL, ticket TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY(project, ticket));
+      CREATE TABLE IF NOT EXISTS parked_items (
+        id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
+        body TEXT NOT NULL, later TEXT NOT NULL DEFAULT '',
+        captured_by TEXT NOT NULL, captured_while_ticket TEXT NOT NULL DEFAULT '',
+        capture_key TEXT NOT NULL, created_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('parked', 'started', 'dismissed')),
+        destination_ticket TEXT, source_id TEXT, candidate_id TEXT, decided_at TEXT,
+        UNIQUE (project, captured_by, capture_key),
+        CHECK (
+          (state = 'started' AND destination_ticket IS NOT NULL AND source_id IS NOT NULL AND candidate_id IS NOT NULL)
+          OR (state != 'started' AND destination_ticket IS NULL AND source_id IS NULL AND candidate_id IS NULL)
+        ));
+      CREATE INDEX IF NOT EXISTS parked_inbox
+        ON parked_items(project, state, created_at, id);
+      CREATE TABLE IF NOT EXISTS parking_commands (
+        command_id TEXT PRIMARY KEY, item_id TEXT NOT NULL,
+        operation TEXT NOT NULL CHECK (operation IN ('start', 'dismiss')),
+        request_fingerprint TEXT NOT NULL, result TEXT NOT NULL,
+        created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS journal_reservations (
+        project TEXT NOT NULL,
+        ticket TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (project, ticket, kind, slug, digest));
+    """)
+
+
+STORE_MIGRATIONS = (
+    _store_migration_v1,
+    _store_migration_v2_sources_ticket,
+    _store_migration_v3_journal_reservations,
+)
+STORE_SCHEMA_VERSION = len(STORE_MIGRATIONS)
+
+
 class Store:
     def __init__(self, path):
         self.path = str(path)
@@ -161,61 +289,8 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.executescript("""
-          CREATE TABLE IF NOT EXISTS sources (
-            id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
-            body TEXT NOT NULL, created_at TEXT NOT NULL, sha256 TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS memories (
-            id TEXT NOT NULL, version INTEGER NOT NULL, recorded_at TEXT NOT NULL,
-            payload TEXT NOT NULL, PRIMARY KEY(id, version));
-          CREATE TABLE IF NOT EXISTS runs (
-            id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS usage_events (
-            id INTEGER PRIMARY KEY, created_at TEXT NOT NULL,
-            project TEXT, ticket TEXT, channel TEXT NOT NULL, operation TEXT NOT NULL,
-            request_estimated_tokens INTEGER NOT NULL, response_estimated_tokens INTEGER NOT NULL);
-          CREATE INDEX IF NOT EXISTS usage_scope ON usage_events(project, ticket);
-          CREATE TABLE IF NOT EXISTS feedback (
-            id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS embeddings (
-            key TEXT PRIMARY KEY, vector TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS knowledge_bases (
-            project TEXT NOT NULL, ticket TEXT NOT NULL, payload TEXT NOT NULL,
-            PRIMARY KEY(project, ticket));
-          CREATE TABLE IF NOT EXISTS parked_items (
-            id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL,
-            body TEXT NOT NULL, later TEXT NOT NULL DEFAULT '',
-            captured_by TEXT NOT NULL, captured_while_ticket TEXT NOT NULL DEFAULT '',
-            capture_key TEXT NOT NULL, created_at TEXT NOT NULL,
-            state TEXT NOT NULL CHECK (state IN ('parked', 'started', 'dismissed')),
-            destination_ticket TEXT, source_id TEXT, candidate_id TEXT, decided_at TEXT,
-            UNIQUE (project, captured_by, capture_key),
-            CHECK (
-              (state = 'started' AND destination_ticket IS NOT NULL AND source_id IS NOT NULL AND candidate_id IS NOT NULL)
-              OR (state != 'started' AND destination_ticket IS NULL AND source_id IS NULL AND candidate_id IS NULL)
-            ));
-          CREATE INDEX IF NOT EXISTS parked_inbox
-            ON parked_items(project, state, created_at, id);
-          CREATE TABLE IF NOT EXISTS parking_commands (
-            command_id TEXT PRIMARY KEY, item_id TEXT NOT NULL,
-            operation TEXT NOT NULL CHECK (operation IN ('start', 'dismiss')),
-            request_fingerprint TEXT NOT NULL, result TEXT NOT NULL,
-            created_at TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS journal_reservations (
-            project TEXT NOT NULL,
-            ticket TEXT NOT NULL,
-            kind TEXT NOT NULL,
-            slug TEXT NOT NULL,
-            digest TEXT NOT NULL,
-            relative_path TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (project, ticket, kind, slug, digest));
-        """)
-        # Existing stores predate ticket scope; their records remain project-only.
-        with self.db:
-            self.db.execute("BEGIN IMMEDIATE")
-            if "ticket" not in {r[1] for r in self.db.execute("PRAGMA table_info(sources)")}:
-                self.db.execute("ALTER TABLE sources ADD COLUMN ticket TEXT NOT NULL DEFAULT ''")
+        apply_migrations(self.db, list(STORE_MIGRATIONS))
+        _store_ensure_tables(self.db)
 
     def close(self):
         self.db.close()
