@@ -7,7 +7,7 @@ You get two surfaces that share one database:
 - **Agent integration (primary).** A stdio MCP server with tools for setup, recall, evidence, journalling, promotion, scope, and feedback.
 - **Review inbox (human).** Localhost UI to confirm waiting candidates in the Memories column. **Lab rules** opens lab-wide writes. **Lab → Agent preview** toggles the agent preview column.
 
-The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `pipx` or run a clone. Distributed under the [MIT License](LICENSE).
+The runtime uses the Python standard library only. Python 3.11+ is required. There is no PyPI release yet; install directly from GitHub with `uv tool` or `pipx`, or run a clone. Distributed under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Local threat model
 
@@ -43,13 +43,23 @@ Evidence and reviewed memories live in SQLite. Recall layers them by scope and b
 
 ## Install
 
+With [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install git+https://github.com/erreep/context-lab.git
+context-lab demo
+context-lab serve
+```
+
+Or with [pipx](https://pipx.pypa.io/):
+
 ```bash
 pipx install git+https://github.com/erreep/context-lab.git
 context-lab demo
 context-lab serve
 ```
 
-Open **http://127.0.0.1:8765**. Confirm waiting candidates in the browser. That is the human loop. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation, run `pipx upgrade context-lab`.
+Open **http://127.0.0.1:8765**. Confirm waiting candidates in the browser. That is the human loop. The default database is `~/.context-lab/memory.sqlite3`; override it with `--db PATH` or `CONTEXT_LAB_DB`. To update a GitHub installation: `uv tool upgrade context-lab` or `pipx upgrade context-lab`. Force a clean rebuild with `uv tool install --force git+https://github.com/erreep/context-lab.git`.
 
 For development from a clone:
 
@@ -494,7 +504,7 @@ Feedback diagnoses capture, retrieval, selection/budget, applicability/validity,
 
 ## Project status
 
-This repository can be installed from source through its `pyproject.toml` or directly from GitHub (`pipx install git+https://github.com/erreep/context-lab.git`). It is distributed under the [MIT License](LICENSE). There is no published PyPI release yet.
+This repository can be installed from source through its `pyproject.toml` or directly from GitHub (`uv tool install` / `pipx install` of the git URL). It is distributed under the [MIT License](LICENSE). There is no published PyPI release yet. Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## Design references
 
