@@ -229,22 +229,25 @@ class HTTPTests(unittest.TestCase):
         self.assertNotIn("Lab → Standing rules", readme)
 
     def test_b5_empty_inbox_single_surface(self):
-        """B5: zero candidates render one empty card, not card plus empty layer sections.
+        """B5: fresh empty inbox is one card; caught-up still lists settled + evidence.
 
         Baseline: renderLayers mapped inboxLayers first, then prepended empty-inbox
         over still-rendered sections (0 to confirm Workspace bands under the hero).
 
-        Target: empty candidate set returns after the hero card; layer map runs only
-        when candidateRows() is non-empty.
+        Target: early-return empty card only when there is nothing to browse
+        (no waiting and no settled/sources). Caught-up falls through to the layer map
+        and opens settled/evidence details when the waiting list is empty.
         """
         page = self.request("/")
-        start = page.index("function renderLayers(){")
+        start = page.index("function canBrowseSettled(){")
         end = page.index("function renderBand(", start)
         body = page[start:end]
-        self.assertIn("if(!candidateRows().length){", body)
+        self.assertIn("function canBrowseSettled(){", body)
+        self.assertIn("if(!candidateRows().length&&!canBrowseSettled()){", body)
         self.assertIn("return;", body)
         self.assertNotIn("+$('layers').innerHTML", body)
-        empty_idx = body.index("if(!candidateRows().length){")
+        self.assertIn("openSettled=!candidateRows().length", body)
+        empty_idx = body.index("if(!candidateRows().length&&!canBrowseSettled()){")
         map_idx = body.index("inboxLayers().map(layer=>")
         self.assertLess(empty_idx, map_idx)
 
