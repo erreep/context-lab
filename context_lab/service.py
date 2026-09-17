@@ -137,8 +137,13 @@ def info(store, project=None, ticket=None):
     from .review import inbox_state
     bases = store.knowledge_bases()
     scope_rows = store.list_scope_rows()
-    projects = sorted({s["project"] for s in store.sources()} | {b["project"] for b in bases} | {GLOBAL_PROJECT},
-                      key=lambda p: (p != GLOBAL_PROJECT, p))
+    projects = sorted(
+        {s["project"] for s in store.sources()}
+        | {b["project"] for b in bases}
+        | set(store._parking_projects())
+        | {GLOBAL_PROJECT},
+        key=lambda p: (p != GLOBAL_PROJECT, p),
+    )
     payload = {"version": "0.1.0",
                "projects": projects,
                "knowledge_bases": bases, "scopes": scope_rows, "feedback": store.feedback(),
