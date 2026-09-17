@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from . import knowledge as knowledge_mod
-from .engine import catalog, compile_context, plan_task
-from .schemas import AgentError, DETAIL_LEVELS, activation_hint, format_context, wire_estimated_tokens
+from .engine import catalog
+from .schemas import AgentError, activation_hint, format_context
+from .service import recall_context
 from .ticket_workspace import TicketWorkspace
-from .service import provider_flags
 from .store import new_id, scope_covers, scope_key
 
 
@@ -106,36 +106,10 @@ def initiate(store, project, ticket="", knowledge=None, path=None, empty=False, 
 
 
 def context(store, task, budget=1200, detail="agent", strategy="targeted", embeddings=None, model_planner=None):
-    if detail not in DETAIL_LEVELS:
-        raise AgentError("validation", "detail must be agent, prose, inspect, or full", field="detail")
-    compact = detail in {"agent", "prose"}
-    flags = provider_flags(store, {"embeddings": embeddings, "model_planner": model_planner})
-    # Plan once. Shrink packs the same planned task; only the final packet is saved.
-    planned = plan_task(task, planner=flags["planner"])
-    select_budget = budget
-    packet, view, wire_text = None, None, ""
-    for _ in range(12):
-        packet = compile_context(
-            store, planned, strategy=strategy, budget=select_budget,
-            embeddings=flags["embeddings"], planner=None, persist=False,
-            planning_metadata=planned.get("planning"),
-        )
-        view, wire_text = format_context(packet, detail)
-        if not compact or wire_estimated_tokens(wire_text) <= budget:
-            break
-        if select_budget <= 128:
-            break
-        select_budget = max(128, int(select_budget * 0.85))
-    if compact and wire_estimated_tokens(wire_text) > budget:
-        raise AgentError(
-            "wire_budget_exceeded",
-            "Compact response exceeds budget; shorten the task or raise budget",
-            field="budget",
-            hint="Use memory_inspect_run for traces; do not widen the agent wire",
-        )
-    packet = store.save_run(packet)
-    view, _ = format_context(packet, detail)
-    return view
+    return recall_context(
+        store, task, budget=budget, detail=detail, strategy=strategy,
+        options={"embeddings": embeddings, "model_planner": model_planner},
+    )
 
 
 def inspect_run(store, run_id):

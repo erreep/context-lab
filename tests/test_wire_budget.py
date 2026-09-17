@@ -104,7 +104,7 @@ class WireBudgetTests(unittest.TestCase):
                 return {"actions": ["implement"], "needs": ["upload"]}
 
         runs_before = self.store.db.execute("SELECT count(*) FROM runs").fetchone()[0]
-        with mock.patch("context_lab.agent_api.provider_flags", return_value={
+        with mock.patch("context_lab.service.provider_flags", return_value={
             "planner": CountingPlanner(), "embeddings": None,
         }):
             view = context(self.store, {
