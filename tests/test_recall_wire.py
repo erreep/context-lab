@@ -54,11 +54,14 @@ class RecallWireTests(unittest.TestCase):
             "memory_propose",
             "memory_journal",
             "memory_park",
+            "memory_delete",
             "memory_inspect_run",
             "memory_feedback",
             "memory_promote",
         }:
             self.assertIn("cwd", schemas[name]["required"])
+        delete = next(t for t in TOOLS if t["name"] == "memory_delete")
+        self.assertTrue(delete["annotations"]["destructiveHint"])
         for name in {"memory_catalog", "memory_allocate_ticket"}:
             self.assertNotIn("cwd", schemas[name]["required"])
 

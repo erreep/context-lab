@@ -460,8 +460,39 @@ class Store:
                     return doc, payload.get("project", ""), payload.get("ticket", "")
         return None
 
+    def _documents_citing(self, source_id: str) -> list[DocumentRef]:
+        out = []
+        for row in self.db.execute("SELECT payload FROM knowledge_bases"):
+            payload = json.loads(row[0])
+            for doc in payload.get("documents", []):
+                if source_id in (doc.get("source_ids") or []) and doc.get("id"):
+                    out.append(DocumentRef(doc["id"]))
+        return out
+
+    def _cascade_members(self, ref: HideRef) -> list[HideRef]:
+        """Note hide pairs document↔backing source so restore of either inverts both."""
+        if isinstance(ref, DocumentRef):
+            found = self._find_document(ref.id)
+            if not found:
+                return [ref]
+            doc, _, _ = found
+            extras = [SourceRef(sid) for sid in doc.get("source_ids") or [] if self.source(sid)]
+            return [ref, *extras]
+        if isinstance(ref, SourceRef):
+            return [ref, *self._documents_citing(ref.id)]
+        return [ref]
+
     def hide(self, refs: HideRef | Sequence[HideRef], *, actor: Actor) -> list[Tombstone]:
-        items = as_refs(refs)
+        expanded: list[HideRef] = []
+        seen: set[tuple[str, str]] = set()
+        for ref in as_refs(refs):
+            for member in self._cascade_members(ref):
+                key = (member.kind, member.id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                expanded.append(member)
+        items = expanded
         if not items:
             raise ValueError("hide requires at least one ref")
         group_id = new_id("hide")
@@ -843,9 +874,22 @@ class Store:
             self.db.execute("INSERT INTO runs VALUES (?,?,?)", (packet["run_id"], now(), json.dumps(packet)))
         return packet
 
-    def run(self, rid):
+    def run(self, rid, *, forensic=False):
         row = self.db.execute("SELECT payload FROM runs WHERE id=?", (rid,)).fetchone()
-        return json.loads(row[0]) if row else None
+        if not row:
+            return None
+        packet = json.loads(row[0])
+        if forensic:
+            return packet
+        vis = self.visibility()
+        if not vis.active:
+            return packet
+        packet = dict(packet)
+        packet["selected"] = [m for m in packet.get("selected", []) if not vis.memory_hidden(m.get("id", ""))]
+        packet["trace"] = [t for t in packet.get("trace", []) if not vis.memory_hidden(t.get("id", ""))]
+        if "picks" in packet and isinstance(packet["picks"], list):
+            packet["picks"] = [p for p in packet["picks"] if not vis.memory_hidden(p.get("id", ""))]
+        return packet
 
     def log_feedback(self, rid, memory_id, observation, note=""):
         if not isinstance(memory_id, str) or not memory_id.strip():

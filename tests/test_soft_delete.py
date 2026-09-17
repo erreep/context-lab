@@ -113,6 +113,74 @@ class SoftDeleteTests(unittest.TestCase):
         rows = self.store.hide(MemoryRef("m-lab"), actor=OperatorActor(confirm_global=True))
         self.assertEqual(rows[0].state, "active")
 
+    def test_http_hide_and_info_trash(self):
+        from context_lab.service import dispatch, info
+        src, mem = self._seed()
+        out = dispatch(self.store, "hide", {"kind": "memory", "id": mem["id"]})
+        self.assertEqual(out["tombstones"][0]["state"], "active")
+        trash = info(self.store, "app", "T-1")["trash"]
+        self.assertTrue(any(t["id"] == mem["id"] for t in trash))
+        dispatch(self.store, "unhide", {"kind": "memory", "id": mem["id"]})
+        self.assertFalse(info(self.store, "app", "T-1")["trash"])
+
+    def test_run_redacts_unless_forensic(self):
+        _src, mem = self._seed()
+        packet = compile_context(
+            self.store,
+            {"project": "app", "ticket": "T-1", "query": "soft-delete", "as_of": "2026-01-01"},
+            persist=True,
+        )
+        self.assertIn("m-live", {m["id"] for m in packet["selected"]})
+        self.store.hide(MemoryRef("m-live"), actor=OperatorActor())
+        live = self.store.run(packet["run_id"])
+        self.assertNotIn("m-live", {m["id"] for m in live["selected"]})
+        frozen = self.store.run(packet["run_id"], forensic=True)
+        self.assertIn("m-live", {m["id"] for m in frozen["selected"]})
+
+    def test_note_cascade_shares_group_and_restores_pair(self):
+        from context_lab.visibility import DocumentRef
+
+        sid = "kb-src-note"
+        self.store.add_source({
+            "id": sid,
+            "project": "app",
+            "ticket": "T-1",
+            "title": "note.md",
+            "body": "Note body for cascade.",
+        })
+        self.store.put_knowledge_base({
+            "project": "app",
+            "ticket": "T-1",
+            "documents": [{
+                "id": "doc-note-1",
+                "kind": "document",
+                "status": "indexed",
+                "title": "note.md",
+                "claim": "Note body for cascade.",
+                "source_ids": [sid],
+            }],
+        })
+        rows = self.store.hide(DocumentRef("doc-note-1"), actor=OperatorActor())
+        kinds = {(t.kind, t.id) for t in rows}
+        self.assertIn(("document", "doc-note-1"), kinds)
+        self.assertIn(("source", sid), kinds)
+        self.assertEqual(len({t.group_id for t in rows}), 1)
+        self.assertTrue(self.store.visibility().source_hidden(sid))
+        self.assertEqual(len(self.store.documents("app", "T-1")), 0)
+        self.store.unhide(SourceRef(sid), actor=OperatorActor())
+        self.assertFalse(self.store.visibility().source_hidden(sid))
+        self.assertEqual(len(self.store.documents("app", "T-1")), 1)
+
+    def test_mcp_delete_hides_exact_scope(self):
+        from context_lab.agent_api import delete
+        from context_lab.schemas import AgentError
+
+        _src, mem = self._seed()
+        out = delete(self.store, "memory", mem["id"], bound=("app", "T-1"))
+        self.assertEqual(out["tombstones"][0]["state"], "active")
+        with self.assertRaises(AgentError):
+            delete(self.store, "memory", mem["id"], bound=("other", "T-9"))
+
 
 if __name__ == "__main__":
     unittest.main()

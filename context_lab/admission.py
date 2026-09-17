@@ -29,7 +29,7 @@ SCOPE_BEARING = {
     "memory_journal",
     "memory_park",
 }
-ID_ADDRESSED = {"memory_inspect_run", "memory_feedback", "memory_promote"}
+ID_ADDRESSED = {"memory_inspect_run", "memory_feedback", "memory_promote", "memory_delete"}
 
 _TASK_FIELDS = ("project", "ticket", "actions", "needs", "state", "as_of")
 

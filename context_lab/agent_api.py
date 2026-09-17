@@ -173,6 +173,36 @@ def promote(store, memory_id, title=None, claim=None):
     return store.promote(memory_id, title=title, claim=claim)
 
 
+def delete(store, kind, artifact_id, *, bound):
+    """MCP hide. Exact-scope only; lab-wide is proposed. Agents cannot restore."""
+    from .visibility import McpActor, parse_ref
+
+    try:
+        ref = parse_ref({"kind": kind, "id": artifact_id})
+    except ValueError as e:
+        raise AgentError("validation", str(e), field="kind") from e
+    if not isinstance(bound, tuple) or len(bound) != 2:
+        raise AgentError("validation", "bound scope required", field="cwd")
+    try:
+        rows = store.hide(ref, actor=McpActor(bound=(bound[0], bound[1])))
+    except ValueError as e:
+        message = str(e)
+        code = "scope_mismatch" if "scope_mismatch" in message else "validation"
+        raise AgentError(code, message, field="id") from e
+    return {
+        "tombstones": [
+            {
+                "kind": t.kind,
+                "id": t.id,
+                "state": t.state,
+                "project": t.project,
+                "ticket": t.ticket,
+            }
+            for t in rows
+        ]
+    }
+
+
 JOURNAL_KINDS = frozenset({"plan", "decision", "progress", "handoff"})
 
 
