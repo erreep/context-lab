@@ -121,7 +121,42 @@ def dispatch(store, operation, payload):
     if operation == "parking-dismiss":
         from .parking import ParkingLot
         return ParkingLot(store).dismiss(payload["park_id"], command_id=payload["command_id"])
+    if operation == "hide":
+        from .visibility import OperatorActor, parse_ref
+        ref = parse_ref({"kind": payload.get("kind"), "id": payload.get("id")})
+        actor = OperatorActor(confirm_global=bool(payload.get("confirm_global")))
+        rows = store.hide(ref, actor=actor)
+        return {"tombstones": [_tombstone_wire(store, t) for t in rows]}
+    if operation == "unhide":
+        from .visibility import OperatorActor, parse_ref
+        ref = parse_ref({"kind": payload.get("kind"), "id": payload.get("id")})
+        actor = OperatorActor(confirm_global=bool(payload.get("confirm_global")))
+        rows = store.unhide(ref, actor=actor)
+        return {"tombstones": [_tombstone_wire(store, t) for t in rows]}
     raise ValueError("Unknown operation")
+
+
+def _tombstone_wire(store, t):
+    title = t.id
+    if t.kind == "memory":
+        m = store.memory(t.id)
+        if m:
+            title = m.get("title") or t.id
+    elif t.kind == "source":
+        s = store.source(t.id)
+        if s:
+            title = s.get("title") or t.id
+    return {
+        "kind": t.kind,
+        "id": t.id,
+        "state": t.state,
+        "hidden_at": t.hidden_at,
+        "hidden_by": t.hidden_by,
+        "project": t.project,
+        "ticket": t.ticket,
+        "group_id": t.group_id,
+        "title": title,
+    }
 
 
 def scopes(store):
@@ -170,10 +205,28 @@ def info(store, project=None, ticket=None):
         payload["inbox"] = inbox_state(store, project, ticket)
         lot = ParkingLot(store)
         payload["later"] = {"count": lot.count(project), "items": lot.list(project=project, state="parked")}
+        payload["trash"] = _trash_for_scope(store, project, ticket)
     else:
         payload["memories"] = _wire_memories(store.memories())
         payload["sources"] = store.sources()
         payload["inherited_memories"] = []
         payload["inherited_sources"] = []
         payload["inbox"] = inbox_state(store)
+        payload["trash"] = [_tombstone_wire(store, t) for t in store.tombstones()]
     return payload
+
+
+def _trash_for_scope(store, project, ticket):
+    """Owned-layer trash for the workbench header selection."""
+    rows = []
+    for t in store.tombstones():
+        if t.project != project:
+            continue
+        if ticket:
+            if t.ticket != ticket:
+                continue
+        else:
+            if t.ticket:
+                continue
+        rows.append(_tombstone_wire(store, t))
+    return rows

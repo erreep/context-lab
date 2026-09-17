@@ -59,7 +59,7 @@ _MCP_MEMORY_DRAFT_SCHEMA = {
 }
 
 
-def tool(name, description, properties, required, read_only=True):
+def tool(name, description, properties, required, read_only=True, destructive=False):
     return {
         "name": name,
         "description": description,
@@ -70,7 +70,7 @@ def tool(name, description, properties, required, read_only=True):
         },
         "annotations": {
             "readOnlyHint": read_only,
-            "destructiveHint": False,
+            "destructiveHint": destructive,
             "openWorldHint": False,
         },
     }
@@ -216,6 +216,18 @@ TOOLS = [
         },
         ["cwd", "title", "body"],
         False,
+    ),
+    tool(
+        "memory_delete",
+        "Hide a memory or source from live recall. Restore is human-only in the review UI.",
+        {
+            **_CWD,
+            "kind": {"type": "string", "enum": ["memory", "source"]},
+            "id": {"type": "string"},
+        },
+        ["cwd", "kind", "id"],
+        False,
+        True,
     ),
 ]
 
@@ -372,6 +384,20 @@ def _dispatch(request: ActiveRequest) -> dict:
             args,
             captured_while_ticket=request.scope.ticket if request.scope else "",
         )
+    if request.name == "memory_delete":
+        kind = args["kind"]
+        rid = args["id"]
+        if kind == "memory":
+            record = admission.load_memory(rid)
+        elif kind == "source":
+            record = request.store.source(rid)
+            if not record:
+                raise AgentError("not_found", "Unknown source id", field="id")
+        else:
+            raise AgentError("validation", "kind must be memory or source", field="kind")
+        admission.with_derived_scope(record)
+        bound = (record["project"], record.get("ticket", ""))
+        return agent_api.delete(request.store, kind, rid, bound=bound)
     raise AgentError("unknown_tool", f"Unknown tool: {request.name}")
 
 

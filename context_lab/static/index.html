@@ -37,6 +37,7 @@ body.inbox-mode .review-desk{border-right:0}
   <div class="brand">Context Lab</div>
   <span id="pending-badge" class="pending-badge">0 to confirm</span>
   <button type="button" id="later-badge" class="pending-badge actionable">Later (0)</button>
+  <button type="button" id="trash-badge" class="pending-badge actionable">Trash (0)</button>
   <label class="header-field">Workspace <select id="project-select" aria-label="Workspace"><option value="">Loading</option></select></label>
   <label class="header-field">Work item <select id="ticket-select" aria-label="Work item"><option value="">This workspace</option></select></label>
   <button class="small quiet" id="new-project">New workspace</button>
@@ -85,6 +86,12 @@ body.inbox-mode .review-desk{border-right:0}
   <div class="dialog-head"><h2>Later</h2><button data-close="later-dialog">Close</button></div>
   <div class="notice">Saved for later. They stay out of recall until you start one on a work item.</div>
   <div id="later-list"></div>
+</dialog>
+
+<dialog id="trash-dialog">
+  <div class="dialog-head"><h2>Trash</h2><button data-close="trash-dialog">Close</button></div>
+  <div class="notice">Hidden from agents. Restore brings the same id back into live recall.</div>
+  <div id="trash-list"></div>
 </dialog>
 
 <dialog id="standing-dialog">
@@ -243,7 +250,8 @@ function parseWorkbench(ws,data){
     feedback:data.feedback||[],
     capabilities:{modelPlanner:!!data.model_available,embeddings:!!data.embeddings_available},
     inbox:data.inbox||null,
-    later:data.later||{count:0,items:[]}
+    later:data.later||{count:0,items:[]},
+    trash:data.trash||[]
   };
 }
 function parseComparison(data){
@@ -353,7 +361,20 @@ function renderChrome(){
   const laterCount=shell.workbench.later?.count||0;
   const laterBadge=$('later-badge');
   laterBadge.textContent='Later ('+laterCount+')';
+  const trashCount=(shell.workbench.trash||[]).filter(item=>item.state==='active'||item.state==='proposed').length;
+  $('trash-badge').textContent='Trash ('+trashCount+')';
   $('new-ticket').disabled=!current;
+}
+function isHidden(kind,id){
+  return (shell.workbench.trash||[]).some(item=>item.kind===kind&&item.id===id&&item.state==='active');
+}
+function renderTrashList(){
+  const items=shell.workbench.trash||[];
+  if(!items.length){$('trash-list').innerHTML='<div class="empty">Trash is empty for this layer.</div>';return}
+  $('trash-list').innerHTML=items.map(item=>{
+    const scope=item.ticket?item.project+' / '+item.ticket:item.project;
+    return '<article class="card"><div class="row-foot"><span class="pill">'+esc(item.kind)+'</span><span class="pill">'+esc(item.state)+'</span><span>'+esc(scope)+'</span></div><h3>'+esc(item.title||item.id)+'</h3><p class="hint">'+esc(item.id)+'</p><div class="actions"><button type="button" class="small primary" data-trash-restore-kind="'+esc(item.kind)+'" data-trash-restore-id="'+esc(item.id)+'">Restore</button></div></article>';
+  }).join('');
 }
 function laterTickets(){
   const project=shell.workspace?.project;
@@ -377,7 +398,7 @@ function renderLaterList(){
 }
 function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
 function canBrowseSettled(){
-  return inboxLayers().some(layer=>layer.rows.some(row=>row.memory.status!=='candidate')||layer.sources.length);
+  return inboxLayers().some(layer=>layer.rows.some(row=>row.memory.status!=='candidate'&&!isHidden('memory',row.memory.id))||layer.sources.some(source=>!isHidden('source',source.id)));
 }
 function renderLayers(){
   // Fresh lab: empty card only. Caught-up (or filtered waiting): still list settled + evidence.
@@ -389,8 +410,8 @@ function renderLayers(){
   const filter=$('layer-filter').value.trim().toLowerCase();
   const openSettled=!candidateRows().length;
   $('layers').innerHTML=inboxLayers().map(layer=>{
-    const rows=layer.rows.filter(row=>rowMatches(row,filter));
-    const sources=layer.sources.filter(source=>!filter||[source.title,source.id,source.body||''].join(' ').toLowerCase().includes(filter));
+    const rows=layer.rows.filter(row=>!isHidden('memory',row.memory.id)&&rowMatches(row,filter));
+    const sources=layer.sources.filter(source=>!isHidden('source',source.id)&&(!filter||[source.title,source.id,source.body||''].join(' ').toLowerCase().includes(filter)));
     const candidates=[...rows.filter(row=>row.memory.status==='candidate')].sort((a,b)=>String(a.memory.title||'').localeCompare(String(b.memory.title||'')));
     const settled=rows.filter(row=>row.memory.status!=='candidate');
     const own=layer.kind==='ticket'||(layer.kind==='baseline'&&shell.workspace.kind==='baseline');
@@ -441,7 +462,7 @@ function candidateRows(){
   const rows=[];
   for(const layer of inboxLayers()){
     for(const row of layer.rows){
-      if(row.memory.status!=='candidate'||!rowMatches(row,filter))continue;
+      if(isHidden('memory',row.memory.id)||row.memory.status!=='candidate'||!rowMatches(row,filter))continue;
       rows.push(row);
     }
   }
@@ -510,7 +531,7 @@ function reviewCardHtml(row,opts){
     +'<label class="field">Claim <textarea class="claim-box" name="claim" required>'+esc(m.claim||'')+'</textarea></label>'
     +evidenceBlock(m.source_ids||[])
     +why+hint+ack
-    +'<div class="actions"><button type="button" class="primary" data-status="confirmed"'+confirmDisabled+'>Confirm</button><button type="button" class="danger" data-status="retracted">Retract</button>'+history+'</div>'
+    +'<div class="actions"><button type="button" class="primary" data-status="confirmed"'+confirmDisabled+'>Confirm</button><button type="button" class="danger" data-status="retracted">Retract</button><button type="button" class="danger" data-hide-kind="memory" data-hide-id="'+esc(m.id)+'">Delete</button>'+history+'</div>'
     +kbd+'</form>';
 }
 async function reviseSelectedStatus(status){
@@ -532,7 +553,10 @@ function renderDesk(){
   if(selection.kind==='none'){$('desk').innerHTML='<div class="card empty">'+(candidateRows().length?'Pick something to confirm on the left.':'Nothing to confirm.')+'</div>';return}
   if(selection.kind==='source'){
     const source=selection.source;
-    $('desk').innerHTML='<article class="card"><div class="row-foot"><span class="pill">evidence</span><span>'+esc(source.id)+'</span></div><h3>'+esc(source.title)+'</h3><div class="source-body">'+esc(source.body||'Select Read to load the immutable source.')+'</div><div class="actions"><button data-read-source="'+esc(source.id)+'">Read</button><button data-draft-source="'+esc(source.id)+'"'+(shell.workbench.capabilities.modelPlanner?'':' disabled')+'>Draft lessons</button></div></article>';return;
+    const ownLayer=layerKey(source);
+    const canDelete=ownLayer==='ticket'||(ownLayer==='baseline'&&shell.workspace.kind==='baseline');
+    const del=canDelete?'<button type="button" class="danger" data-hide-kind="source" data-hide-id="'+esc(source.id)+'">Delete</button>':'';
+    $('desk').innerHTML='<article class="card"><div class="row-foot"><span class="pill">evidence</span><span>'+esc(source.id)+'</span></div><h3>'+esc(source.title)+'</h3><div class="source-body">'+esc(source.body||'Select Read to load the immutable source.')+'</div><div class="actions"><button data-read-source="'+esc(source.id)+'">Read</button><button data-draft-source="'+esc(source.id)+'"'+(shell.workbench.capabilities.modelPlanner?'':' disabled')+'>Draft lessons</button>'+del+'</div></article>';return;
   }
   if(selection.kind==='compose-source'){
     $('desk').innerHTML='<form class="card" id="source-form"><h3>Add evidence</h3><label class="field">Title <input name="title" required></label><label class="field">Original observation <textarea name="body" required></textarea></label><div class="actions"><button class="primary push">Save evidence</button></div></form>';return;
@@ -549,7 +573,7 @@ function renderDesk(){
   }
   const m=row.memory;
   let controls='';
-  if(row.access==='edit')controls='<button class="primary" type="submit">Save revision</button>';
+  if(row.access==='edit')controls='<button class="primary" type="submit">Save revision</button><button type="button" class="danger" data-hide-kind="memory" data-hide-id="'+esc(m.id)+'">Delete</button>';
   if(row.access==='inspect')controls=row.routeToOwner.kind==='project-defaults'?'<button type="button" data-owner-baseline>Review in Workspace</button>':'<button type="button" data-standing data-standing-id="'+esc(m.id)+'">Review in Lab</button>';
   if(m.status==='confirmed'&&m.ticket&&shell.workspace.kind==='ticket'&&m.ticket===shell.workspace.ticket)
     controls+='<button type="button" data-promote="'+esc(m.id)+'">Promote to workspace</button>';
@@ -649,6 +673,25 @@ document.addEventListener('click',async event=>{
     }
     if(button.dataset.status){await reviseSelectedStatus(button.dataset.status);return}
     if(button.dataset.promote){const result=await api('promote',{memory_id:button.dataset.promote});await refreshSnapshots(shell.workspace);showToast(result.idempotent?'Promotion already existed.':'Promoted to workspace candidate '+result.memory.id+'.');return}
+    if(button.dataset.hideKind&&button.dataset.hideId){
+      if(!confirm('Move this to Trash? Agents will stop seeing it. You can restore from Trash.'))return;
+      const payload={kind:button.dataset.hideKind,id:button.dataset.hideId};
+      if(shell.workspace?.project==='__global__'||(button.dataset.hideKind==='memory'&&findRow(button.dataset.hideId)?.memory?.project==='__global__'))payload.confirm_global=true;
+      await api('hide',payload);
+      shell.selection={kind:'none'};
+      await refreshSnapshots(shell.workspace);render();
+      showToast('Moved to Trash.');
+      return;
+    }
+    if(button.dataset.trashRestoreKind&&button.dataset.trashRestoreId){
+      const payload={kind:button.dataset.trashRestoreKind,id:button.dataset.trashRestoreId};
+      const item=(shell.workbench.trash||[]).find(t=>t.kind===payload.kind&&t.id===payload.id);
+      if(item?.project==='__global__')payload.confirm_global=true;
+      await api('unhide',payload);
+      await refreshSnapshots(shell.workspace);renderTrashList();render();
+      showToast('Restored.');
+      return;
+    }
     if(button.dataset.readSource){const source=await api('source/'+encodeURIComponent(button.dataset.readSource));shell.selection={kind:'source',source};renderDesk();return}
     if(button.dataset.draftSource){const result=await api('draft',{source_id:button.dataset.draftSource});shell.selection={kind:'compose-memory',target:shell.workspace.kind};renderDesk();if(result.memories?.[0]){const form=$('memory-form'),draft=result.memories[0];for(const key of ['title','claim','kind','rationale','expected_effect'])if(form.elements[key])form.elements[key].value=draft[key]||'';form.elements.source_ids.value=(draft.source_ids||[]).join(', ')}showToast((result.memories||[]).length+' draft lessons returned.');return}
     if(button.dataset.history){const result=await api('revisions/'+encodeURIComponent(button.dataset.history));$('history-title').textContent='Revision history · '+button.dataset.history;$('history-body').textContent=result.revisions.map(item=>'v'+item.version+' · '+item.status+'\n'+item.claim).join('\n\n');$('history-dialog').showModal();return}
@@ -778,6 +821,7 @@ $('lab-tools').addEventListener('click',()=>{
 });
 $('open-standing').addEventListener('click',()=>openStanding());
 $('later-badge').addEventListener('click',()=>{renderLaterList();$('later-dialog').showModal()});
+$('trash-badge').addEventListener('click',()=>{renderTrashList();$('trash-dialog').showModal()});
 $('open-benchmark').addEventListener('click',()=>{$('benchmark-dialog').showModal();$('lab-menu').open=false});
 $('export-data').addEventListener('click',async()=>{try{download('context-lab-export.json',await api('export'))}catch(error){showToast(error.message,true)}});
 $('clear-global-form').addEventListener('click',clearGlobalForm);
@@ -801,7 +845,7 @@ $('run-benchmark').addEventListener('click',async()=>{try{$('run-benchmark').dis
     if(!project){
       const info=await api('info');
       shell.workspace=null;
-      shell.workbench={workspace:null,layers:[],feedback:[],capabilities:{modelPlanner:!!info.model_available,embeddings:!!info.embeddings_available},inbox:info.inbox||null,later:info.later||{count:0,items:[]}};
+      shell.workbench={workspace:null,layers:[],feedback:[],capabilities:{modelPlanner:!!info.model_available,embeddings:!!info.embeddings_available},inbox:info.inbox||null,later:info.later||{count:0,items:[]},trash:info.trash||[]};
       shell.selection={kind:'none'};
       $('scenario').innerHTML='<option value="">Custom task</option>'+shell.scenarios.map(item=>'<option value="'+esc(item.id)+'">'+esc(item.label)+'</option>').join('');
       $('project-select').innerHTML='<option value="">No workspace yet</option>';

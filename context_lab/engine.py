@@ -238,9 +238,13 @@ def compile_context(store, raw_task, strategy="targeted", budget=1200, embedding
         task["planning"] = planning_metadata
     # Layered scope: lab-wide → project baseline → exact ticket. Other tickets stay isolated.
     layers = set(scope_layers(task))
-    all_memories = [m for m in store.memories() if scope_key(m) in layers]
+    vis = store.visibility()
+    all_memories = [
+        m for m in store.memories()
+        if scope_key(m) in layers and not vis.memory_hidden(m["id"])
+    ]
     for project, ticket in scope_layers(task):
-        all_memories += store.documents(project, ticket)
+        all_memories += store.documents(project, ticket, visibility=vis)
     all_memories.sort(key=lambda m: (layer_rank(m), m["id"]))
     trace, eligible = {}, {}
     # Scope, candidate exclusion, time validity and supersession are shared by all arms.
