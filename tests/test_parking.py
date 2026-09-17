@@ -121,6 +121,23 @@ class ParkingTests(unittest.TestCase):
         self.assertEqual(later["count"], 1)
         self.assertEqual(later["items"][0]["title"], "Only park")
 
+    def test_baseline_info_lists_ticket_captured_parks(self):
+        """captured_while_ticket is provenance only — baseline Later still lists the row."""
+        from context_lab.service import info
+
+        item = self._park(
+            title="Ticket-captured park",
+            body="parked while on a work item",
+            captured_while_ticket="DNAB2B-538",
+        )
+        later = info(self.store, PROJECT, "")["later"]
+        self.assertEqual(later["count"], 1)
+        self.assertEqual(later["items"][0]["id"], item["id"])
+        self.assertEqual(later["items"][0]["captured_while_ticket"], "DNAB2B-538")
+        on_ticket = info(self.store, PROJECT, "DNAB2B-538")["later"]
+        self.assertEqual(on_ticket["count"], 1)
+        self.assertEqual(on_ticket["items"][0]["id"], item["id"])
+
     def test_global_project_rejected(self):
         with self.assertRaises(ParkingError):
             self.lot.capture(
