@@ -376,13 +376,18 @@ function renderLaterList(){
   }).join('');
 }
 function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
+function canBrowseSettled(){
+  return inboxLayers().some(layer=>layer.rows.some(row=>row.memory.status!=='candidate')||layer.sources.length);
+}
 function renderLayers(){
-  if(!candidateRows().length){
+  // Fresh lab: empty card only. Caught-up (or filtered waiting): still list settled + evidence.
+  if(!candidateRows().length&&!canBrowseSettled()){
     const box=shell.workbench.inbox||{headline:'You\'re set up. Nothing to review yet.',body:'Agents propose lessons here when they learn something. Confirm them before they affect recall.'};
     $('layers').innerHTML='<div class="card empty-inbox"><h3>'+esc(box.headline)+'</h3><p>'+esc(box.body)+'</p></div>';
     return;
   }
   const filter=$('layer-filter').value.trim().toLowerCase();
+  const openSettled=!candidateRows().length;
   $('layers').innerHTML=inboxLayers().map(layer=>{
     const rows=layer.rows.filter(row=>rowMatches(row,filter));
     const sources=layer.sources.filter(source=>!filter||[source.title,source.id,source.body||''].join(' ').toLowerCase().includes(filter));
@@ -391,11 +396,11 @@ function renderLayers(){
     const own=layer.kind==='ticket'||(layer.kind==='baseline'&&shell.workspace.kind==='baseline');
     const actions=own?'<button class="small" data-compose-source="'+layer.kind+'">Add evidence</button><button class="small" data-compose-memory="'+layer.kind+'">Add candidate</button>':'';
     const settledBand=settled.length
-      ?'<details class="advanced"><summary style="padding:0 11px 9px">Confirmed and retracted ('+settled.length+')</summary><div class="advanced-body">'+renderBand('',settled)+'</div></details>'
+      ?'<details class="advanced"'+(openSettled?' open':'')+'><summary style="padding:0 11px 9px">Confirmed and retracted ('+settled.length+')</summary><div class="advanced-body">'+renderBand('',settled)+'</div></details>'
       :'';
     return'<section class="layer" data-layer="'+layer.kind+'"><div class="layer-head"><div><h2>'+layerLabel(layer.kind)+'</h2><div class="layer-meta">'+candidates.length+' to confirm · '+settled.filter(row=>row.memory.status==='confirmed').length+' confirmed</div></div><div class="layer-actions">'+actions+'</div></div>'
       +renderBand('Waiting',candidates)+settledBand
-      +'<details class="advanced"><summary style="padding:0 11px 9px">Evidence ('+sources.length+')</summary><div class="advanced-body">'+sources.map(source=>'<button type="button" class="row" data-source-id="'+esc(source.id)+'"><span class="row-title">'+esc(source.title)+'</span><span class="row-foot">'+esc(source.id)+'</span></button>').join('')+'</div></details>';
+      +'<details class="advanced"'+(openSettled&&sources.length?' open':'')+'><summary style="padding:0 11px 9px">Evidence ('+sources.length+')</summary><div class="advanced-body">'+sources.map(source=>'<button type="button" class="row" data-source-id="'+esc(source.id)+'"><span class="row-title">'+esc(source.title)+'</span><span class="row-foot">'+esc(source.id)+'</span></button>').join('')+'</div></details>';
   }).join('');
 }
 function renderBand(title,rows){
