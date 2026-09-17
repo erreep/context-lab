@@ -110,6 +110,17 @@ class ParkingTests(unittest.TestCase):
         self.assertEqual(payload["parked_items"][0]["id"], item["id"])
         self.assertEqual(payload["parked_items"][0]["body"], "export body")
 
+    def test_park_only_project_appears_in_scopes_and_later(self):
+        """Workbench catalog is scopes-backed; park-only projects must still be selectable."""
+        from context_lab.service import info, scopes
+
+        self._park(project="solo", title="Only park", body="no sources yet")
+        self.assertIn("solo", scopes(self.store)["by_project"])
+        self.assertIn("solo", info(self.store)["projects"])
+        later = info(self.store, "solo", "")["later"]
+        self.assertEqual(later["count"], 1)
+        self.assertEqual(later["items"][0]["title"], "Only park")
+
     def test_global_project_rejected(self):
         with self.assertRaises(ParkingError):
             self.lot.capture(

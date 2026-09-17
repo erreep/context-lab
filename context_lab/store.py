@@ -400,6 +400,9 @@ class Store:
         for memory in self.memories():
             project, ticket = scope_key(memory)
             row(project, ticket)["memory_count"] += 1
+        # Park-only projects must appear in the workbench catalog or Later is unreachable.
+        for project in self._parking_projects():
+            row(project, "")
         row(GLOBAL_PROJECT, "")
         for project in {p for p, _ in rows}:
             row(project, "")
@@ -730,6 +733,15 @@ class Store:
             (project, state),
         ).fetchone()
         return row[0]
+
+    def _parking_projects(self, state="parked"):
+        return [
+            r[0]
+            for r in self.db.execute(
+                "SELECT DISTINCT project FROM parked_items WHERE state=? ORDER BY project",
+                (state,),
+            )
+        ]
 
     def _parking_command_replay(self, command_id, item_id, operation, fingerprint):
         row = self.db.execute(
