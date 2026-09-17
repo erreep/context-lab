@@ -382,6 +382,10 @@ function laterTickets(){
   const tickets=[...(catalog?.tickets||[])];
   const current=shell.workspace?.kind==='ticket'?shell.workspace.ticket:'';
   if(current&&!tickets.includes(current))tickets.unshift(current);
+  for(const item of shell.workbench.later?.items||[]){
+    const capture=String(item.captured_while_ticket||'').trim();
+    if(capture&&!tickets.includes(capture))tickets.push(capture);
+  }
   return [...new Set(tickets)].filter(Boolean);
 }
 function renderLaterList(){
@@ -389,11 +393,14 @@ function renderLaterList(){
   if(!items.length){$('later-list').innerHTML='<div class="empty">Nothing saved for later.</div>';return}
   const tickets=laterTickets();
   const current=shell.workspace?.kind==='ticket'?shell.workspace.ticket:'';
-  const options=tickets.map(id=>'<option value="'+esc(id)+'"'+(id===current?' selected':'')+'>'+esc(id)+'</option>').join('')
-    +'<option value=""'+(current?'':' selected')+'>New work item…</option>';
   $('later-list').innerHTML=items.map(item=>{
     const note=item.later?'<p class="hint">'+esc(item.later)+'</p>':'';
-    return '<article class="card" data-park-id="'+esc(item.id)+'"><h3>'+esc(item.title)+'</h3>'+note+'<div class="source-body">'+esc(item.body)+'</div><label class="field">Start on <select data-later-ticket="'+esc(item.id)+'">'+options+'</select></label><div class="actions"><button type="button" class="small primary" data-later-start="'+esc(item.id)+'">Start</button><button type="button" class="small danger" data-later-dismiss="'+esc(item.id)+'">Dismiss</button></div></article>';
+    const capture=String(item.captured_while_ticket||'').trim();
+    const where=capture?'<p class="hint">Parked while on '+esc(capture)+'</p>':'';
+    const prefer=capture&&tickets.includes(capture)?capture:current;
+    const options=tickets.map(id=>'<option value="'+esc(id)+'"'+(id===prefer?' selected':'')+'>'+esc(id)+'</option>').join('')
+      +'<option value=""'+(prefer?'':' selected')+'>New work item…</option>';
+    return '<article class="card" data-park-id="'+esc(item.id)+'"><h3>'+esc(item.title)+'</h3>'+where+note+'<div class="source-body">'+esc(item.body)+'</div><label class="field">Start on <select data-later-ticket="'+esc(item.id)+'">'+options+'</select></label><div class="actions"><button type="button" class="small primary" data-later-start="'+esc(item.id)+'">Start</button><button type="button" class="small danger" data-later-dismiss="'+esc(item.id)+'">Dismiss</button></div></article>';
   }).join('');
 }
 function rowMatches(row,filter){return!filter||[row.memory.title,row.memory.claim,row.memory.id,row.memory.kind,row.memory.status].join(' ').toLowerCase().includes(filter)}
@@ -404,7 +411,12 @@ function renderLayers(){
   // Fresh lab: empty card only. Caught-up (or filtered waiting): still list settled + evidence.
   if(!candidateRows().length&&!canBrowseSettled()){
     const box=shell.workbench.inbox||{headline:'You\'re set up. Nothing to review yet.',body:'Agents propose lessons here when they learn something. Confirm them before they affect recall.'};
-    $('layers').innerHTML='<div class="card empty-inbox"><h3>'+esc(box.headline)+'</h3><p>'+esc(box.body)+'</p></div>';
+    const laterCount=shell.workbench.later?.count||0;
+    // Parks never land in Waiting; without this callout an empty inbox hides a non-zero Later badge.
+    const laterCue=laterCount
+      ?'<p><button type="button" class="small primary" data-open-later>'+laterCount+' saved for later — open Later</button></p>'
+      :'';
+    $('layers').innerHTML='<div class="card empty-inbox"><h3>'+esc(box.headline)+'</h3><p>'+esc(box.body)+'</p>'+laterCue+'</div>';
     return;
   }
   const filter=$('layer-filter').value.trim().toLowerCase();
@@ -673,6 +685,7 @@ document.addEventListener('click',async event=>{
     }
     if(button.dataset.status){await reviseSelectedStatus(button.dataset.status);return}
     if(button.dataset.promote){const result=await api('promote',{memory_id:button.dataset.promote});await refreshSnapshots(shell.workspace);showToast(result.idempotent?'Promotion already existed.':'Promoted to workspace candidate '+result.memory.id+'.');return}
+    if(button.dataset.openLater!==undefined){renderLaterList();$('later-dialog').showModal();return}
     if(button.dataset.hideKind&&button.dataset.hideId){
       if(!confirm('Move this to Trash? Agents will stop seeing it. You can restore from Trash.'))return;
       const payload={kind:button.dataset.hideKind,id:button.dataset.hideId};
