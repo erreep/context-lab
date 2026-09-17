@@ -8,8 +8,22 @@ import sqlite3
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Sequence
 
 from .sqlite_migrate import apply as apply_migrations
+from .visibility import (
+    Actor,
+    DocumentRef,
+    HideRef,
+    McpActor,
+    MemoryRef,
+    OperatorActor,
+    SourceRef,
+    Tombstone,
+    Visibility,
+    as_refs,
+    strip_visibility_keys,
+)
 
 
 KINDS = {"fact", "constraint", "decision", "event", "lesson", "standing_rule"}
@@ -269,6 +283,37 @@ def _store_ensure_tables(conn):
         relative_path TEXT NOT NULL,
         created_at TEXT NOT NULL,
         PRIMARY KEY (project, ticket, kind, slug, digest));
+      CREATE TABLE IF NOT EXISTS tombstones (
+        kind TEXT NOT NULL CHECK (kind IN ('memory', 'source', 'document')),
+        id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('proposed', 'active')),
+        hidden_at TEXT NOT NULL,
+        hidden_by TEXT NOT NULL CHECK (hidden_by IN ('mcp', 'operator')),
+        project TEXT NOT NULL,
+        ticket TEXT NOT NULL DEFAULT '',
+        group_id TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (kind, id));
+      CREATE INDEX IF NOT EXISTS tombstones_state ON tombstones(state);
+      CREATE INDEX IF NOT EXISTS tombstones_scope ON tombstones(project, ticket, kind);
+      CREATE INDEX IF NOT EXISTS tombstones_group ON tombstones(group_id);
+    """)
+
+
+def _store_migration_v4_tombstones(conn):
+    conn.executescript("""
+      CREATE TABLE IF NOT EXISTS tombstones (
+        kind TEXT NOT NULL CHECK (kind IN ('memory', 'source', 'document')),
+        id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('proposed', 'active')),
+        hidden_at TEXT NOT NULL,
+        hidden_by TEXT NOT NULL CHECK (hidden_by IN ('mcp', 'operator')),
+        project TEXT NOT NULL,
+        ticket TEXT NOT NULL DEFAULT '',
+        group_id TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (kind, id));
+      CREATE INDEX IF NOT EXISTS tombstones_state ON tombstones(state);
+      CREATE INDEX IF NOT EXISTS tombstones_scope ON tombstones(project, ticket, kind);
+      CREATE INDEX IF NOT EXISTS tombstones_group ON tombstones(group_id);
     """)
 
 
@@ -276,6 +321,7 @@ STORE_MIGRATIONS = (
     _store_migration_v1,
     _store_migration_v2_sources_ticket,
     _store_migration_v3_journal_reservations,
+    _store_migration_v4_tombstones,
 )
 STORE_SCHEMA_VERSION = len(STORE_MIGRATIONS)
 
@@ -344,8 +390,166 @@ class Store:
         return [{k: v for k, v in json.loads(r[0]).items() if k != "documents"}
                 for r in self.db.execute("SELECT payload FROM knowledge_bases ORDER BY project,ticket")]
 
-    def documents(self, project, ticket=""):
-        return (self.knowledge_base(project, ticket) or {}).get("documents", [])
+    def documents(self, project, ticket="", *, visibility=None, include_hidden=False):
+        docs = (self.knowledge_base(project, ticket) or {}).get("documents", [])
+        if include_hidden:
+            return docs
+        vis = visibility if visibility is not None else self.visibility()
+        return [d for d in docs if not vis.document_hidden(d)]
+
+    def visibility(self) -> Visibility:
+        rows = self.db.execute(
+            "SELECT kind, id FROM tombstones WHERE state='active'"
+        ).fetchall()
+        return Visibility(active=frozenset((r["kind"], r["id"]) for r in rows))
+
+    def tombstone(self, ref: HideRef) -> Tombstone | None:
+        row = self.db.execute(
+            "SELECT * FROM tombstones WHERE kind=? AND id=?",
+            (ref.kind, ref.id),
+        ).fetchone()
+        return self._row_to_tombstone(row) if row else None
+
+    def tombstones(self, *, state: str | None = None) -> list[Tombstone]:
+        if state:
+            rows = self.db.execute(
+                "SELECT * FROM tombstones WHERE state=? ORDER BY hidden_at, kind, id",
+                (state,),
+            )
+        else:
+            rows = self.db.execute("SELECT * FROM tombstones ORDER BY hidden_at, kind, id")
+        return [self._row_to_tombstone(r) for r in rows]
+
+    @staticmethod
+    def _row_to_tombstone(row) -> Tombstone:
+        return Tombstone(
+            kind=row["kind"],
+            id=row["id"],
+            state=row["state"],
+            hidden_at=row["hidden_at"],
+            hidden_by=row["hidden_by"],
+            project=row["project"],
+            ticket=row["ticket"],
+            group_id=row["group_id"] or "",
+        )
+
+    def _resolve_hide_target(self, ref: HideRef) -> tuple[str, str]:
+        if isinstance(ref, MemoryRef):
+            m = self.memory(ref.id)
+            if not m:
+                raise ValueError(f"Unknown memory: {ref.id}")
+            return m["project"], m["ticket"]
+        if isinstance(ref, SourceRef):
+            s = self.source(ref.id)
+            if not s:
+                raise ValueError(f"Unknown source: {ref.id}")
+            return s["project"], s["ticket"]
+        if isinstance(ref, DocumentRef):
+            found = self._find_document(ref.id)
+            if not found:
+                raise ValueError(f"Unknown document: {ref.id}")
+            _doc, project, ticket = found
+            return project, ticket
+        raise ValueError("Unknown hide ref")
+
+    def _find_document(self, doc_id: str):
+        for row in self.db.execute("SELECT payload FROM knowledge_bases"):
+            payload = json.loads(row[0])
+            for doc in payload.get("documents", []):
+                if doc.get("id") == doc_id:
+                    return doc, payload.get("project", ""), payload.get("ticket", "")
+        return None
+
+    def hide(self, refs: HideRef | Sequence[HideRef], *, actor: Actor) -> list[Tombstone]:
+        items = as_refs(refs)
+        if not items:
+            raise ValueError("hide requires at least one ref")
+        group_id = new_id("hide")
+        stamp = now()
+        plane = "mcp" if isinstance(actor, McpActor) else "operator"
+        out: list[Tombstone] = []
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            for ref in items:
+                project, ticket = self._resolve_hide_target(ref)
+                if isinstance(actor, McpActor):
+                    if (project, ticket) != actor.bound:
+                        raise ValueError("scope_mismatch: hide target is outside the bound project/ticket")
+                    state = "proposed" if project == GLOBAL_PROJECT else "active"
+                else:
+                    if project == GLOBAL_PROJECT and not actor.confirm_global:
+                        raise ValueError("Lab-wide hide requires confirm_global=true after explicit user approval")
+                    state = "active"
+                existing = self.db.execute(
+                    "SELECT * FROM tombstones WHERE kind=? AND id=?",
+                    (ref.kind, ref.id),
+                ).fetchone()
+                if existing and existing["state"] == state:
+                    out.append(self._row_to_tombstone(existing))
+                    continue
+                if existing and existing["state"] == "active" and state == "proposed":
+                    out.append(self._row_to_tombstone(existing))
+                    continue
+                self.db.execute(
+                    """INSERT INTO tombstones (kind,id,state,hidden_at,hidden_by,project,ticket,group_id)
+                       VALUES (?,?,?,?,?,?,?,?)
+                       ON CONFLICT(kind,id) DO UPDATE SET
+                         state=excluded.state,
+                         hidden_at=excluded.hidden_at,
+                         hidden_by=excluded.hidden_by,
+                         group_id=excluded.group_id""",
+                    (ref.kind, ref.id, state, stamp, plane, project, ticket, group_id),
+                )
+                out.append(self._row_to_tombstone(
+                    self.db.execute(
+                        "SELECT * FROM tombstones WHERE kind=? AND id=?",
+                        (ref.kind, ref.id),
+                    ).fetchone()
+                ))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return out
+
+    def unhide(self, refs: HideRef | Sequence[HideRef], *, actor: Actor) -> list[Tombstone]:
+        if isinstance(actor, McpActor):
+            raise ValueError("Agents cannot restore hidden artifacts")
+        items = as_refs(refs)
+        removed: list[Tombstone] = []
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            groups: set[str] = set()
+            for ref in items:
+                row = self.db.execute(
+                    "SELECT * FROM tombstones WHERE kind=? AND id=?",
+                    (ref.kind, ref.id),
+                ).fetchone()
+                if not row:
+                    continue
+                if row["project"] == GLOBAL_PROJECT and not actor.confirm_global:
+                    raise ValueError("Lab-wide restore requires confirm_global=true after explicit user approval")
+                removed.append(self._row_to_tombstone(row))
+                if row["group_id"]:
+                    groups.add(row["group_id"])
+                self.db.execute(
+                    "DELETE FROM tombstones WHERE kind=? AND id=?",
+                    (ref.kind, ref.id),
+                )
+            for gid in groups:
+                for row in self.db.execute(
+                    "SELECT * FROM tombstones WHERE group_id=?", (gid,)
+                ).fetchall():
+                    removed.append(self._row_to_tombstone(row))
+                    self.db.execute(
+                        "DELETE FROM tombstones WHERE kind=? AND id=?",
+                        (row["kind"], row["id"]),
+                    )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return removed
 
     def source(self, sid):
         row = self.db.execute("SELECT * FROM sources WHERE id=?", (sid,)).fetchone()
@@ -424,7 +628,7 @@ class Store:
             raise ValueError("memories must be a nonempty list")
         prepared = []
         for raw in entries:
-            item = dict(raw)
+            item = strip_visibility_keys(dict(raw))
             old = self.memory(item["id"]) if isinstance(item.get("id"), str) else None
             # Revising an existing lab-wide memory does not re-ask for confirm_global.
             if old and old["project"] == GLOBAL_PROJECT and item.get("project") == GLOBAL_PROJECT:
@@ -433,6 +637,7 @@ class Store:
         validated = [validate_memory(m) for m in prepared]
         if len({m["id"] for m in validated}) != len(validated):
             raise ValueError("Duplicate IDs in memory batch")
+        vis = self.visibility()
         output = []
         try:
             self.db.execute("BEGIN IMMEDIATE")
@@ -443,6 +648,8 @@ class Store:
                     s = self.source(sid)
                     if not s:
                         raise ValueError(f"Missing evidence source: {sid}")
+                    if vis.source_hidden(sid):
+                        raise ValueError(f"Evidence source is hidden: {sid}")
                     if not scope_covers(s, m):
                         raise ValueError("Memory and evidence must share the same project/ticket or an ancestor layer")
                 if m["quote"] and not any(m["quote"] in self.source(s)["body"] for s in m["source_ids"]):
@@ -450,6 +657,8 @@ class Store:
                 for ref in m["depends_on"] + m["supersedes"]:
                     if ref not in proposed or not scope_covers(proposed[ref], m):
                         raise ValueError(f"Missing or cross-scope memory reference: {ref}")
+                    if vis.memory_hidden(ref):
+                        raise ValueError(f"Hidden memory reference: {ref}")
                 old = existing.get(m["id"])
                 expected = m.pop("expected_version", None)
                 if old and scope_key(old) != scope_key(m):

@@ -152,6 +152,12 @@ def source(store, source_id, project, ticket=""):
             "Source not found in this project/ticket or an ancestor layer",
             field="source_id",
         )
+    if store.visibility().source_hidden(source_id):
+        raise AgentError(
+            "source_not_in_scope",
+            "Source not found in this project/ticket or an ancestor layer",
+            field="source_id",
+        )
     return s
 
 
